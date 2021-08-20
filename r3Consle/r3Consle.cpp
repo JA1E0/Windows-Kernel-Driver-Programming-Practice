@@ -2,7 +2,7 @@
 //
 
 #include <iostream>
-#include<Windows.h>
+#include <Windows.h>
 
 
 int main()
@@ -13,7 +13,7 @@ int main()
     DWORD dwWrite = 0;
     hDevice = CreateFile(L"\\\\\.\\MyFirstDevice", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
-    if (hDevice==INVALID_HANDLE_VALUE) {
+    if (hDevice == INVALID_HANDLE_VALUE) {
         std::cout << "Open Device Failed\n";
         system("pause");
         return 0;
@@ -21,18 +21,19 @@ int main()
 
     std::cout << "Open Success!\n";
     system("pause");
-    
-    // ReadFile(hDevice, readbuffer, 50, &dwRead, NULL);
 
-    // printf("--%p--%s--%d--\n",readbuffer, readbuffer, dwRead);
-    // system("pause");
+    ReadFile(hDevice, readbuffer, 50, &dwRead, NULL);
 
-    // WriteFile(hDevice, "This Message Come From R3", strlen("This Message Come From R3"), &dwWrite,NULL);
+    printf("--%p--%s--%d--\n", readbuffer, readbuffer, dwRead);
+    system("pause");
 
-    // printf("--%d--\n", dwWrite);
+    WriteFile(hDevice, "this message come from r3", strlen("this message come from r3"), &dwWrite, NULL);
+
+    printf("--%d--\n", NULL);
+
     CloseHandle(hDevice);
     system("pause");
-       
+
     return 0;
 }
 
