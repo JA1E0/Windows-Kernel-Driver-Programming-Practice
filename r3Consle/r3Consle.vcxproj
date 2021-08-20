@@ -119,6 +119,7 @@
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <TranslateIncludes>true</TranslateIncludes>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

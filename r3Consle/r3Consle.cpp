@@ -3,37 +3,52 @@
 
 #include <iostream>
 #include <Windows.h>
+#include<winioctl.h>
+
+#define IOCTL_MUL (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9888,METHOD_BUFFERED,FILE_ANY_ACCESS)
 
 
 int main()
 {
-    HANDLE hDevice = NULL;
-    CHAR readbuffer[50] = { 0 };
-    DWORD dwRead = 0;
-    DWORD dwWrite = 0;
-    hDevice = CreateFile(L"\\\\\.\\MyFirstDevice", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE hDevice = NULL;
+	CHAR readbuffer[50] = { 0 };
+	DWORD dwRead = 0;
+	DWORD dwWrite = 0;
+	hDevice = CreateFile(L"\\\\\.\\MyFirstDevice", GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
-    if (hDevice == INVALID_HANDLE_VALUE) {
-        std::cout << "Open Device Failed\n";
-        system("pause");
-        return 0;
-    }
+	if (hDevice == INVALID_HANDLE_VALUE) {
+		std::cout << "Open Device Failed\n";
+		system("pause");
+		return 0;
+	}
 
-    std::cout << "Open Success!\n";
-    system("pause");
+	std::cout << "Open Success!\n";
+	system("pause");
 
-    ReadFile(hDevice, readbuffer, 50, &dwRead, NULL);
+	ReadFile(hDevice, readbuffer, 50, &dwRead, NULL);
 
-    printf("--%p--%s--%d--\n", readbuffer, readbuffer, dwRead);
-    system("pause");
+	printf("--%p--%s--%d--\n", readbuffer, readbuffer, dwRead);
+	system("pause");
 
-    WriteFile(hDevice, "this message come from r3", strlen("this message come from r3"), &dwWrite, NULL);
+	WriteFile(hDevice, "this message come from r3", strlen("this message come from r3"), &dwWrite, NULL);
 
-    printf("--%d--\n", NULL);
+	printf("--%d--\n", dwWrite);
 
-    CloseHandle(hDevice);
-    system("pause");
 
-    return 0;
+	printf("DeviceIO---%d\n", IOCTL_MUL);
+
+	//MDLAddress
+	DWORD dwA = 88888;
+	DWORD dwB = 0;
+
+	DeviceIoControl(hDevice, IOCTL_MUL, &dwA, 4, &dwB, 4, &dwWrite, NULL);
+
+	printf("--in %d --out %d --really info %d\n", dwA, dwB, dwWrite);
+
+	CloseHandle(hDevice);
+
+	system("pause");
+
+	return 0;
 }
 

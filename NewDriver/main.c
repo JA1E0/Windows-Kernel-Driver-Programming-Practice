@@ -1,9 +1,11 @@
 #include<ntddk.h>
+#include<windef.h>
 
 #define DEVICE_NAME L"\\Device\\MyFirstDevice_fiveopenopen"
 //符号链接命名规则
-#define SYM_NAME L"\\??\\MyFirstDevice_fiveopenopen"
-//#define SYM_NAME L"\\DosDevices\\MyFirstDevice"
+#define SYM_NAME L"\\DosDevices\\MyFirstDevice"
+
+#define IOCTL_MUL (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9888,METHOD_BUFFERED,FILE_ANY_ACCESS)
 
 void nothing(HANDLE hPpid, HANDLE hMypid, BOOLEAN bCreate) {
 	DbgPrint("ProcessNotify\n");
@@ -118,7 +120,7 @@ NTSTATUS MyWrite(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 
 	RtlCopyMemory(pDevice->DeviceExtension, writebuffer, writesize);
 
-	DbgPrint("--%p--%s\n", writebuffer, pDevice);
+	DbgPrint("--%p--%s\n", writebuffer, writebuffer);
 
 	pIRP->IoStatus.Status = status;
 
@@ -129,6 +131,54 @@ NTSTATUS MyWrite(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 	return STATUS_SUCCESS;
 }
 
+NTSTATUS MyControl(PDEVICE_OBJECT pDevice, PIRP pIRP) {
+	NTSTATUS status = STATUS_SUCCESS;
+	//请求的消息通过IRP保存。
+	//获得缓冲区
+	PIO_STACK_LOCATION pStack = IoGetCurrentIrpStackLocation(pIRP);
+
+	//获取功能号
+	ULONG uIocode = pStack->Parameters.DeviceIoControl.IoControlCode;
+	//获得输入缓冲区长度
+	ULONG ulInlen = pStack->Parameters.DeviceIoControl.InputBufferLength;
+	//获得输出缓冲区长度
+	ULONG ulOutlen = pStack->Parameters.DeviceIoControl.OutputBufferLength;
+
+
+	ULONG ulIoinfo = 0;
+
+	DbgPrint("--Device IO %d--%d--\n", uIocode, IOCTL_MUL);
+
+	switch (uIocode)
+	{
+	case IOCTL_MUL: {
+		//获取缓冲区
+		DWORD dwIndata = *(PDWORD)pIRP->AssociatedIrp.SystemBuffer;
+		DbgPrint("--Kernel Indata %d--\n", dwIndata);
+
+		dwIndata  = dwIndata* 5;
+
+		*(PDWORD)pIRP->AssociatedIrp.SystemBuffer = dwIndata;
+
+		ulIoinfo = 777;
+		break;
+	}
+	default:
+		status = STATUS_UNSUCCESSFUL;
+		 
+		ulIoinfo = 0;
+
+		break;
+	}
+
+	pIRP->IoStatus.Status = status;
+
+	pIRP->IoStatus.Information = ulIoinfo;
+
+	IoCompleteRequest(pIRP, IO_NO_INCREMENT);
+
+	return STATUS_SUCCESS;
+}
 // 使用驱动对象
 NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
 {
@@ -151,7 +201,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	//设置驱动读写方式
 
-	pDevice->Flags |= DO_BUFFERED_IO;
+	//__debugbreak();
+	pDevice->Flags |= DO_BUFFERED_IO; // 0xc8 | 0x200 = 0x2c8
 
 	//
 	// 创建设备成功 创建符号链接
@@ -190,6 +241,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	pDriverObject->MajorFunction[IRP_MJ_WRITE] = MyWrite;
 
+	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
 
 	return NtStatus;
 }
