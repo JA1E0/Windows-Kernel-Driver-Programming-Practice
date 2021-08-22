@@ -1,5 +1,6 @@
-#include<ntddk.h>
+#include<ntifs.h>
 #include<windef.h>
+#include<ntstrsafe.h>
 
 #define DEVICE_NAME L"\\Device\\MyFirstDevice_fiveopenopen"
 //符号链接命名规则
@@ -187,61 +188,145 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	UNICODE_STRING DeviceName = { 0 };
 
+	UNICODE_STRING uTargetUnicode = { 0 };
+
 	PDEVICE_OBJECT pDevice = NULL;
 	//标准流程 初始化
-	RtlInitUnicodeString(&DeviceName, DEVICE_NAME);
-	//创建设备对象
-	NtStatus = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
+	//RtlInitUnicodeString(&DeviceName, DEVICE_NAME);
 
-	if (!NT_SUCCESS(NtStatus)) {
-		DbgPrint("Create Device Failed :%x\n", NtStatus);
+	PCHAR	tempbuffer = "C:\\ABc\\ccc\\bbb\\eee.txt";
 
-		return NtStatus;
-	}
+	STRING	str = { 0 };
 
-	//设置驱动读写方式
+	RtlInitString(&str, tempbuffer);
 
-	//__debugbreak();
-	pDevice->Flags |= DO_BUFFERED_IO; // 0xc8 | 0x200 = 0x2c8
+	//转换成宽字符
+
+	RtlAnsiStringToUnicodeString(&DeviceName, &str, TRUE);
+
+
+	DbgPrint("--%wZ--\n", &DeviceName);
+
+	uTargetUnicode.Buffer = ExAllocatePool(NonPagedPool, 0x1000);
+	uTargetUnicode.MaximumLength = 0x1000;
+
+	RtlZeroMemory(uTargetUnicode.Buffer,0x1000);
+
+	RtlCopyUnicodeString(&uTargetUnicode, &DeviceName);
+
+	DbgPrint("--%wZ--\n", &uTargetUnicode);
+
+	//大小写
+
+	RtlUpcaseUnicodeString(&DeviceName, &DeviceName, FALSE);
+	DbgPrint("--%wZ--\n", &DeviceName);
+	 
+	//释放之前申请的缓冲区
+	RtlFreeUnicodeString(&DeviceName);
+	RtlFreeUnicodeString(&uTargetUnicode);
 
 	//
-	// 创建设备成功 创建符号链接
-	//
-	UNICODE_STRING symname = { 0 };
+	//新
+	//安全拷贝字符
 
-	RtlInitUnicodeString(&symname, SYM_NAME);
+	PWCHAR tempbuffer2 = ExAllocatePool(NonPagedPool, 0x1000);
 
-	//IoDeleteSymbolicLink(&symname);
-	NtStatus = IoCreateSymbolicLink(&symname, &DeviceName);
+	RtlZeroMemory(tempbuffer2, 0x1000);
 
-	if (NtStatus == STATUS_OBJECT_NAME_COLLISION) {
-		UNICODE_STRING symname = { 0 };
-		RtlInitUnicodeString(&symname, SYM_NAME);
-		IoDeleteSymbolicLink(&symname);
-		NtStatus = IoCreateSymbolicLink(&symname, &DeviceName);
+	RtlStringCbCopyW(tempbuffer2, 0x1000, L"\\??\\");
+
+	//追加字符
+
+	RtlStringCbCatW(tempbuffer2, 0x1000, L"C:\\ABc\\ccc\\bbb\\eee.txt");
+
+	//前缀判断
+	UNICODE_STRING temp1 = { 0 }, temp2 = { 0 };
+
+	RtlInitUnicodeString(&temp1, tempbuffer2);
+
+	RtlInitUnicodeString(&temp2, L"\\??\\");
+
+	if (RtlPrefixUnicodeString(&temp2, &temp1, FALSE)) {
+		DbgPrint("Be Finded\n");
+	}
+	UNICODE_STRING temp3 = { 0 }, temp4 = { 0 };
+
+
+	RtlInitUnicodeString(&temp3, L"C:\\ABc\\ccc\\bbb\\eee.txt");
+
+	RtlInitUnicodeString(&temp4, L"C:\\ABc\\CCC\\bbb\\AVVeee123.txt");
+
+	
+	if  (RtlEqualString(&temp3, &temp4, TRUE)) {
+		DbgPrint("temp3 = temp4 \n");
 	}
 
-	if (!NT_SUCCESS(NtStatus)) {
+	//字符查找
+	UNICODE_STRING temp5 = { 0 };
+	//一定要大写	
+	RtlInitUnicodeString(&temp5, L"*EEE*");//*EEE.TXT
 
-		DbgPrint("Create SymbolicLink Failed:%x\n", NtStatus);
-		IoDeleteDevice(pDevice);
-		return NtStatus;
+	if (FsRtlIsNameInExpression(&temp5, &temp4, TRUE, NULL)) {
+		DbgPrint("Searched\n");
 	}
 
-	//分发函数
-	pDriverObject->MajorFunction[IRP_MJ_CREATE] = MyCreate;
+	DbgPrint("--%ws--\n", tempbuffer2);
 
 
-	//关闭 清理操作
-	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = MyClose;
 
-	pDriverObject->MajorFunction[IRP_MJ_CLEANUP] = MyClean;
 
-	pDriverObject->MajorFunction[IRP_MJ_READ] = MyRead;
+	//创建设备对象 /*
+	//NtStatus = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
 
-	pDriverObject->MajorFunction[IRP_MJ_WRITE] = MyWrite;
+	//if (!NT_SUCCESS(NtStatus)) {
+	//	DbgPrint("Create Device Failed :%x\n", NtStatus);
 
-	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
+	//	return NtStatus;
+	//}
+
+	////设置驱动读写方式
+
+	////__debugbreak();
+	//pDevice->Flags |= DO_BUFFERED_IO; // 0xc8 | 0x200 = 0x2c8
+
+	////
+	//// 创建设备成功 创建符号链接
+	////
+	//UNICODE_STRING symname = { 0 };
+
+	//RtlInitUnicodeString(&symname, SYM_NAME);
+
+	////IoDeleteSymbolicLink(&symname);
+	//NtStatus = IoCreateSymbolicLink(&symname, &DeviceName);
+
+	//if (NtStatus == STATUS_OBJECT_NAME_COLLISION) {
+	//	UNICODE_STRING symname = { 0 };
+	//	RtlInitUnicodeString(&symname, SYM_NAME);
+	//	IoDeleteSymbolicLink(&symname);
+	//	NtStatus = IoCreateSymbolicLink(&symname, &DeviceName);
+	//}
+
+	//if (!NT_SUCCESS(NtStatus)) {
+
+	//	DbgPrint("Create SymbolicLink Failed:%x\n", NtStatus);
+	//	IoDeleteDevice(pDevice);
+	//	return NtStatus;
+	//}
+
+	////分发函数
+	//pDriverObject->MajorFunction[IRP_MJ_CREATE] = MyCreate;
+
+
+	////关闭 清理操作
+	//pDriverObject->MajorFunction[IRP_MJ_CLOSE] = MyClose;
+
+	//pDriverObject->MajorFunction[IRP_MJ_CLEANUP] = MyClean;
+
+	//pDriverObject->MajorFunction[IRP_MJ_READ] = MyRead;
+
+	//pDriverObject->MajorFunction[IRP_MJ_WRITE] = MyWrite;
+
+	//pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
 
 	return NtStatus;
 }
