@@ -58,6 +58,7 @@ int main()
 
 	printf("--Copy %ws --To %ws --really info %d\n", filepath.source, filepath.target, dwWrite);
 
+
 	CloseHandle(hDevice);
 
 	system("pause");

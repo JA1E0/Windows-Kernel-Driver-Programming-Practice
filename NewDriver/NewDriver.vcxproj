@@ -67,6 +67,7 @@
     <DriverType>WDM</DriverType>
     <Driver_SpectreMitigation>Spectre</Driver_SpectreMitigation>
     <SpectreMitigation>false</SpectreMitigation>
+    <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
@@ -154,7 +155,7 @@
     <ClCompile>
       <TreatWarningAsError>false</TreatWarningAsError>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
-      <ExceptionHandling>Async</ExceptionHandling>
+      <ExceptionHandling>false</ExceptionHandling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
   </ItemDefinitionGroup>

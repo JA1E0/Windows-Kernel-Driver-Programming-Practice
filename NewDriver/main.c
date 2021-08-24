@@ -30,7 +30,7 @@ void DrvierUnload(PDRIVER_OBJECT pDriverObject) {
 		RtlInitUnicodeString(&sysname, SYM_NAME);
 		NtStatus = IoDeleteSymbolicLink(&sysname);
 
-		DbgPrint("DeleteSymbolicLink Return : %d\n", NtStatus);
+		//DbgPrint("DeleteSymbolicLink Return : %d\n", NtStatus);
 
 		IoDeleteDevice(pDriverObject->DeviceObject);
 
@@ -386,7 +386,7 @@ NTSTATUS KernelSmallCopyFile(PWCHAR pwDestPath, PWCHAR pwSourcePath) {
 
 		status = ZwCreateFile(
 			&hsource,
-			GENERIC_ALL,
+			GENERIC_READ,
 			&obja_source,
 			&io_stack,
 			NULL,
@@ -405,12 +405,12 @@ NTSTATUS KernelSmallCopyFile(PWCHAR pwDestPath, PWCHAR pwSourcePath) {
 
 		status = ZwCreateFile(
 			&htarget,
-			GENERIC_ALL,
+			GENERIC_WRITE,
 			&obja_target,
 			&io_stack,
 			NULL,
 			FILE_ATTRIBUTE_NORMAL,
-			FILE_SHARE_READ,
+			FILE_SHARE_WRITE,
 			FILE_SUPERSEDE,//文件不存在 则创建
 			FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
 			NULL,
@@ -472,7 +472,8 @@ NTSTATUS KernelSmallCopyFile(PWCHAR pwDestPath, PWCHAR pwSourcePath) {
 NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
 {
 	pDriverObject->DriverUnload = DrvierUnload;
-	NTSTATUS NtStatus = STATUS_SUCCESS;
+
+	NTSTATUS status = STATUS_SUCCESS;
 
 
 	UNICODE_STRING DeviceName = { 0 };
@@ -483,6 +484,150 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	//标准流程 初始化
 	RtlInitUnicodeString(&DeviceName, DEVICE_NAME);
 
+	DbgPrint("---%wZ---\n", pRegistryPath);
+
+	// 注册表操作
+
+	//open reg
+
+	HANDLE hKey = NULL;
+
+	ULONG ulRetSize = 0;
+
+	OBJECT_ATTRIBUTES objaReg = { 0 };
+
+	PKEY_VALUE_PARTIAL_INFORMATION keyinfo = NULL;
+
+	InitializeObjectAttributes(&objaReg,pRegistryPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+	
+	//Open Key
+	//ZwCreateKey ZwOpenKey 
+	
+	//ZwCreateKey可以创建也可以打开
+	/*status = ZwCreateKey(&hKey, KEY_ALL_ACCESS, &objaReg, NULL, NULL, REG_OPTION_NON_VOLATILE, &ulDispostion);
+
+	if (NT_SUCCESS(status)) {
+		if (ulDispostion == REG_CREATED_NEW_KEY) {
+			DbgPrint("Key has be Created\n");
+		}
+		else if (ulDispostion == REG_OPENED_EXISTING_KEY)
+		{
+			DbgPrint("Key has be Opened\n");
+		}
+		else {
+			DbgPrint("Error\n");
+		}
+	}
+	else {
+		DbgPrint("Create Key Failed: %x\n", status);
+	}
+	*/
+
+	//确定该注册表存在的时候使用
+
+	status = ZwOpenKey(&hKey, KEY_ALL_ACCESS, &objaReg);
+
+
+	do {
+		UNICODE_STRING name = { 0 };
+
+		RtlInitUnicodeString(&name, L"ImagePath");
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		status = ZwQueryValueKey(hKey, &name, KeyValuePartialInformation, NULL, 0, &ulRetSize);
+
+		if (status == STATUS_BUFFER_TOO_SMALL && ulRetSize != 0) {
+			
+			keyinfo = ExAllocatePool(NonPagedPool, ulRetSize);
+
+			if (!keyinfo) {
+
+				DbgPrint("ExAllocatePool Secondly Failed\n");
+
+				break;
+			}
+			RtlZeroMemory(keyinfo, ulRetSize);
+		}
+		status = ZwQueryValueKey(hKey, &name, KeyValuePartialInformation, keyinfo, ulRetSize, &ulRetSize);
+
+		if (!NT_SUCCESS(status))
+			break;
+
+		PWCHAR imagepath = (PWCHAR)(keyinfo->Data);
+
+		DbgPrint("---ImagePath---%ws\n", imagepath);
+
+		//C:\\Windows\System32\drivers \SystemRoot\System32\drivers\acpipmi.sys 更早的启动
+
+		//课后作业 判断前缀是否是\\SystemRoot\\ 则已经拷贝
+
+		UNICODE_STRING prefix = { 0 };
+		UNICODE_STRING uImagePath = { 0 };
+
+		RtlInitUnicodeString(&prefix, L"\\SystemRoot\\");
+		RtlInitUnicodeString(&uImagePath, imagepath);
+
+
+		if (RtlPrefixUnicodeString(&prefix, &uImagePath, TRUE)) {
+
+			DbgPrint("Already Copied File\n");
+
+			break;
+		}
+		
+		status = KernelSmallCopyFile(L"\\??\\C:\\Windows\\System32\\drivers\\NewDriver.sys", imagepath);
+
+		if (!NT_SUCCESS(status)) {
+			DbgPrint("Copy File Failed :%x\n", status);
+			break;
+		}
+
+		//change path
+		PWCHAR  rootpath = L"\\SystemRoot\\system32\\drivers\\NewDriver.sys";
+
+		status = ZwSetValueKey(hKey, &name, 0, REG_EXPAND_SZ/*使用环境变量的UNICODE字符串*/,rootpath, wcslen(rootpath) * 2 + 2);
+
+		if (!NT_SUCCESS(status)) {
+			DbgPrint("SetValueKey Failed :%x\n", status);
+			break;
+		}
+
+	}while (0);
+
+	if (keyinfo != NULL)
+		ExFreePool(keyinfo);
+	if (hKey != NULL) {
+		ZwClose(hKey);
+		hKey = NULL;
+	}
+
+
+	//另一种方式 写入注册表
+	ULONG tempstart = 1;
+
+	//封装好的函数
+	//RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE, pRegistryPath->Buffer, L"Start", REG_DWORD, &tempstart, 4);
+
+	//先删除子项 才能删除父项
+	//ZwDeleteKey(hKey);
+
+	//检测注册表是否存在
+	//status = RtlCheckRegistryKey(RTL_REGISTRY_SERVICES, L"123456");
+
+	//if (NT_SUCCESS(status)) {
+	//	DbgPrint("Be Found\n");
+	//}
+	//else {
+	//	DbgPrint("Not Found\n");
+
+	//	RtlCreateRegistryKey(RTL_REGISTRY_SERVICES, L"123456");
+	//	
+	//}
+	
+
+	//字符作相关
 	/*
 	PCHAR	tempbuffer = "C:\\ABc\\ccc\\bbb\\eee.txt";
 
@@ -564,23 +709,25 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	*/
 
-	//创建设备对象 /*
-	NtStatus = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
+	//创建设备对象 
 
+	//NtStatus = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
+	/*
 	if (!NT_SUCCESS(NtStatus)) {
 		DbgPrint("Create Device Failed :%x\n", NtStatus);
 
 		return NtStatus;
 	}
+	*/
 
 	//设置驱动读写方式
-
+	/*
 	//__debugbreak();
 	pDevice->Flags |= DO_BUFFERED_IO; // 0xc8 | 0x200 = 0x2c8
+	*/
 
-	//
 	// 创建设备成功 创建符号链接
-	//
+/*
 	UNICODE_STRING symname = { 0 };
 
 	RtlInitUnicodeString(&symname, SYM_NAME);
@@ -601,25 +748,25 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 		IoDeleteDevice(pDevice);
 		return NtStatus;
 	}
-
+*/
 	//分发函数
-	pDriverObject->MajorFunction[IRP_MJ_CREATE] = MyCreate;
-
+/*
+	//pDriverObject->MajorFunction[IRP_MJ_CREATE] = MyCreate;
 
 	//关闭 清理操作
-	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = MyClose;
+	//pDriverObject->MajorFunction[IRP_MJ_CLOSE] = MyClose;
 
-	pDriverObject->MajorFunction[IRP_MJ_CLEANUP] = MyClean;
+	//pDriverObject->MajorFunction[IRP_MJ_CLEANUP] = MyClean;
 
-	pDriverObject->MajorFunction[IRP_MJ_READ] = MyRead;
+	//pDriverObject->MajorFunction[IRP_MJ_READ] = MyRead;
 
 	//pDriverObject->MajorFunction[IRP_MJ_WRITE] = MyWrite;
 
-	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
-
+	//pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
+*/
 	//KernelDeleteFile(L"\\??\\C:\\123.exe");
 
 	//KernelSmallCopyFile(L"\\??\\C:\\789.exe", L"\\??\\C:\\567.exe");
 
-	return NtStatus;
+	return status;
 }
