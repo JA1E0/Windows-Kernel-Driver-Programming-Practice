@@ -35,9 +35,9 @@ int main()
 	printf("--%p--%s--%d--\n", readbuffer, readbuffer, dwRead);
 	system("pause");
 
-	WriteFile(hDevice, "this message come from r3", strlen("this message come from r3"), &dwWrite, NULL);
+	//WriteFile(hDevice, "this message come from r3", strlen("this message come from r3"), &dwWrite, NULL);
 
-	printf("--%d--\n", dwWrite);
+	//printf("--%d--\n", dwWrite);
 
 
 	//printf("DeviceIO---%d\n", IOCTL_MUL);
@@ -51,14 +51,15 @@ int main()
 	////dwA　dwB =>SysTemBuffer,dwWrite->infomation
 	//printf("--in %d --out %d --really info %d\n", dwA, dwB, dwWrite);
 
+	/*
 	system("pause");
+
 	FILEPATH filepath = {L"C:\\123.exe", L"C:\\DbgView.exe" };
 
 	DeviceIoControl(hDevice, IOCTL_COPY, (LPVOID)&filepath, sizeof(FILEPATH), NULL,NULL, &dwWrite, NULL);
 
 	printf("--Copy %ws --To %ws --really info %d\n", filepath.source, filepath.target, dwWrite);
-
-
+	*/
 	CloseHandle(hDevice);
 
 	system("pause");

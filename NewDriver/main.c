@@ -9,6 +9,14 @@
 #define IOCTL_MUL (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9888,METHOD_BUFFERED,FILE_ANY_ACCESS)
 #define IOCTL_COPY (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9889,METHOD_BUFFERED,FILE_ANY_ACCESS)
 
+BYTE	PhyBuffer[] = { 0x11,0x22,0x33,0x44,0x55 };
+
+BOOL bLock = FALSE;
+
+KSPIN_LOCK spinlock = { 0 };
+
+KDPC dpcobj = { 0 };
+
 typedef struct {
 	WCHAR target[256];
 	WCHAR source[256];
@@ -100,12 +108,41 @@ NTSTATUS MyRead(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 	//缓冲区
 	PCHAR readbuffer = pIRP->AssociatedIrp.SystemBuffer;
 
-	RtlCopyMemory(readbuffer, "This Message Come From Kernel.", strlen("This Message Come From Kernel."));
+	KIRQL oldirql = 0;
+
+	//RtlCopyMemory(readbuffer, "This Message Come From Kernel.", strlen("This Message Come From Kernel."));
+
+	//只锁了一个
+	//避免高中断级跑过多代码
+	if (!bLock) { 
+		//加锁
+		KeAcquireSpinLock(&spinlock, &oldirql);
+
+		bLock = TRUE;
+
+		//解锁
+		KeReleaseSpinLock(&spinlock, oldirql);
+
+		//
+		//遍历链表
+		//
+
+		DbgPrint("AAAAAAAAAAAAAAA\n");
+
+		bLock = FALSE;
+	}
+
+	RtlCopyMemory(readbuffer, PhyBuffer, sizeof(PhyBuffer));
+
 	pIRP->IoStatus.Status = status;
 
 	pIRP->IoStatus.Information = strlen("This Message Come From Kernel.");
 
 	DbgPrint("Readlly Read Info Len is %d \n", strlen("This Message Come From Kernel."));
+
+	DbgPrint("---Current Irql = %d---\n", KeGetCurrentIrql());
+
+
 	IoCompleteRequest(pIRP, IO_NO_INCREMENT);
 
 	return STATUS_SUCCESS;
@@ -124,9 +161,14 @@ NTSTATUS MyWrite(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 	//缓冲区
 	PCHAR writebuffer = pIRP->AssociatedIrp.SystemBuffer;
 
-	RtlZeroMemory(pDevice->DeviceExtension, 200);
+	//RtlZeroMemory(pDevice->DeviceExtension, 200);
 
-	RtlCopyMemory(pDevice->DeviceExtension, writebuffer, writesize);
+	RtlZeroMemory(writebuffer, writesize);
+
+	//RtlCopyMemory(pDevice->DeviceExtension, writebuffer, writesize);
+
+	RtlCopyMemory(PhyBuffer, writebuffer, sizeof(PhyBuffer));
+
 
 	DbgPrint("--%p--%s\n", writebuffer, writebuffer);
 
@@ -213,7 +255,7 @@ NTSTATUS MyControl(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 }
 
 //删除文件
-NTSTATUS	KernelDeleteFile(PWCHAR file_path) {
+NTSTATUS KernelDeleteFile(PWCHAR file_path) {
 	UNICODE_STRING uFilePath = { 0 };
 
 	NTSTATUS status = STATUS_SUCCESS;
@@ -468,13 +510,21 @@ NTSTATUS KernelSmallCopyFile(PWCHAR pwDestPath, PWCHAR pwSourcePath) {
 	return status;
 }
 
+//Dpc函数
+
+	VOID DpcRoutine(PVOID context) {
+
+		DbgPrint("---Dpc Run Current Irql=%d\n", KeGetCurrentIrql());
+
+		return;
+	}
+
 // 使用驱动对象
 NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
 {
 	pDriverObject->DriverUnload = DrvierUnload;
 
 	NTSTATUS status = STATUS_SUCCESS;
-
 
 	UNICODE_STRING DeviceName = { 0 };
 
@@ -486,8 +536,25 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	DbgPrint("---%wZ---\n", pRegistryPath);
 
+	KeInitializeSpinLock(&spinlock);
+
+	KeInitializeDpc(&dpcobj, DpcRoutine, NULL);
+
+	KeInsertQueueDpc(&dpcobj, NULL, NULL);
+
+	//DbgPrint("---Current Irql = %d---\n", KeGetCurrentIrql());
+
+	//KIRQL oldirql = 0;
+
+	//oldirql = KeRaiseIrqlToDpcLevel();
+
+	//DbgPrint("---Current Irql = %d---\n", KeGetCurrentIrql());
+
+	//KeLowerIrql(oldirql);
+
 	// 注册表操作
 
+	/*
 	//open reg
 
 	HANDLE hKey = NULL;
@@ -504,24 +571,24 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	//ZwCreateKey ZwOpenKey 
 	
 	//ZwCreateKey可以创建也可以打开
-	/*status = ZwCreateKey(&hKey, KEY_ALL_ACCESS, &objaReg, NULL, NULL, REG_OPTION_NON_VOLATILE, &ulDispostion);
+	//status = ZwCreateKey(&hKey, KEY_ALL_ACCESS, &objaReg, NULL, NULL, REG_OPTION_NON_VOLATILE, &ulDispostion);
 
-	if (NT_SUCCESS(status)) {
-		if (ulDispostion == REG_CREATED_NEW_KEY) {
-			DbgPrint("Key has be Created\n");
-		}
-		else if (ulDispostion == REG_OPENED_EXISTING_KEY)
-		{
-			DbgPrint("Key has be Opened\n");
-		}
-		else {
-			DbgPrint("Error\n");
-		}
-	}
-	else {
-		DbgPrint("Create Key Failed: %x\n", status);
-	}
-	*/
+	//if (NT_SUCCESS(status)) {
+	//	if (ulDispostion == REG_CREATED_NEW_KEY) {
+	//		DbgPrint("Key has be Created\n");
+	//	}
+	//	else if (ulDispostion == REG_OPENED_EXISTING_KEY)
+	//	{
+	//		DbgPrint("Key has be Opened\n");
+	//	}
+	//	else {
+	//		DbgPrint("Error\n");
+	//	}
+	//}
+	//else {
+	//	DbgPrint("Create Key Failed: %x\n", status);
+	//}
+	
 
 	//确定该注册表存在的时候使用
 
@@ -586,8 +653,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 		//change path
 		PWCHAR  rootpath = L"\\SystemRoot\\system32\\drivers\\NewDriver.sys";
-
-		status = ZwSetValueKey(hKey, &name, 0, REG_EXPAND_SZ/*使用环境变量的UNICODE字符串*/,rootpath, wcslen(rootpath) * 2 + 2);
+											//使用环境变量的UNICODE字符串
+		status = ZwSetValueKey(hKey, &name, 0, REG_EXPAND_SZ,rootpath, wcslen(rootpath) * 2 + 2);
 
 		if (!NT_SUCCESS(status)) {
 			DbgPrint("SetValueKey Failed :%x\n", status);
@@ -626,6 +693,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	//	
 	//}
 	
+	*/
 
 	//字符作相关
 	/*
@@ -711,59 +779,56 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	//创建设备对象 
 
-	//NtStatus = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
-	/*
-	if (!NT_SUCCESS(NtStatus)) {
-		DbgPrint("Create Device Failed :%x\n", NtStatus);
+	status = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
+	
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("Create Device Failed :%x\n", status);
 
-		return NtStatus;
+		return status;
 	}
-	*/
-
+	
 	//设置驱动读写方式
-	/*
-	//__debugbreak();
+
 	pDevice->Flags |= DO_BUFFERED_IO; // 0xc8 | 0x200 = 0x2c8
-	*/
 
 	// 创建设备成功 创建符号链接
-/*
+
 	UNICODE_STRING symname = { 0 };
 
 	RtlInitUnicodeString(&symname, SYM_NAME);
 
 	//IoDeleteSymbolicLink(&symname);
-	NtStatus = IoCreateSymbolicLink(&symname, &DeviceName);
+	status = IoCreateSymbolicLink(&symname, &DeviceName);
 
-	if (NtStatus == STATUS_OBJECT_NAME_COLLISION) {
+	if (status == STATUS_OBJECT_NAME_COLLISION) {
 		UNICODE_STRING symname = { 0 };
 		RtlInitUnicodeString(&symname, SYM_NAME);
 		IoDeleteSymbolicLink(&symname);
-		NtStatus = IoCreateSymbolicLink(&symname, &DeviceName);
+		status = IoCreateSymbolicLink(&symname, &DeviceName);
 	}
 
-	if (!NT_SUCCESS(NtStatus)) {
+	if (!NT_SUCCESS(status)) {
 
-		DbgPrint("Create SymbolicLink Failed:%x\n", NtStatus);
+		DbgPrint("Create SymbolicLink Failed:%x\n", status);
 		IoDeleteDevice(pDevice);
-		return NtStatus;
+		return status;
 	}
-*/
-	//分发函数
-/*
-	//pDriverObject->MajorFunction[IRP_MJ_CREATE] = MyCreate;
+
+	//派遣函数
+
+	pDriverObject->MajorFunction[IRP_MJ_CREATE] = MyCreate;
 
 	//关闭 清理操作
-	//pDriverObject->MajorFunction[IRP_MJ_CLOSE] = MyClose;
+	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = MyClose;
 
-	//pDriverObject->MajorFunction[IRP_MJ_CLEANUP] = MyClean;
+	pDriverObject->MajorFunction[IRP_MJ_CLEANUP] = MyClean;
 
-	//pDriverObject->MajorFunction[IRP_MJ_READ] = MyRead;
+	pDriverObject->MajorFunction[IRP_MJ_READ] = MyRead;
 
-	//pDriverObject->MajorFunction[IRP_MJ_WRITE] = MyWrite;
+	pDriverObject->MajorFunction[IRP_MJ_WRITE] = MyWrite;
 
-	//pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
-*/
+	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
+
 	//KernelDeleteFile(L"\\??\\C:\\123.exe");
 
 	//KernelSmallCopyFile(L"\\??\\C:\\789.exe", L"\\??\\C:\\567.exe");
