@@ -8,6 +8,11 @@
 
 #define IOCTL_MUL (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9888,METHOD_BUFFERED,FILE_ANY_ACCESS)
 #define IOCTL_COPY (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9889,METHOD_BUFFERED,FILE_ANY_ACCESS)
+#define IOCTL_PROC (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9890,METHOD_BUFFERED,FILE_ANY_ACCESS)
+
+
+//声明后才可使用
+NTKERNELAPI UCHAR* PsGetProcessImageFileName(__in PEPROCESS Process);
 
 BYTE	PhyBuffer[] = { 0x11,0x22,0x33,0x44,0x55 };
 
@@ -22,15 +27,81 @@ typedef struct {
 	WCHAR source[256];
 } FILEPATH;
 
+//链表结构初始化
+typedef struct _MyStruct {
+	HANDLE pid;
+
+	LIST_ENTRY list;
+
+	PEPROCESS pEprocesspbj;
+
+	BYTE processname[64];
+}MyStruct, * PMyStruct;
+
+LIST_ENTRY listhead = { 0 };
+
 NTSTATUS KernelSmallCopyFile(PWCHAR pwDestPath, PWCHAR pwSourcePath);
 
 void nothing(HANDLE hPpid, HANDLE hMypid, BOOLEAN bCreate) {
 	DbgPrint("ProcessNotify\n");
 }
 
+VOID ProcessNotifyFun(HANDLE pid, HANDLE processid, BOOLEAN bcaref) {
+
+	if (bcaref) {
+		DbgPrint("process create, PID is %d\n", processid);
+
+		//PEPROCESS tempep = PsGetCurrentProcess();
+		PEPROCESS tempep = NULL;
+
+		PsLookupProcessByProcessId(processid, &tempep);
+
+		if (!tempep) {
+			return;
+		}
+
+		PUCHAR processname = PsGetProcessImageFileName(tempep);
+
+		DbgPrint("Process Name is  %s\n", processname);
+
+		PMyStruct ptempptr = ExAllocatePool(NonPagedPool, sizeof(MyStruct));
+
+		if (ptempptr) {
+
+			KIRQL oldirql;
+
+			PLIST_ENTRY templist = NULL;
+
+			RtlZeroMemory(ptempptr, sizeof(MyStruct));
+
+			//成员赋值
+
+			ptempptr->pEprocesspbj = tempep;
+
+			ptempptr->pid = processid;
+
+			RtlCopyMemory(ptempptr->processname, processname, strlen(processname));
+
+			//加锁
+			KeAcquireSpinLock(&spinlock, &oldirql);
+
+			//尾部插入链表
+			InsertTailList(&listhead, &(ptempptr->list));
+
+			//解锁
+			KeReleaseSpinLock(&spinlock, oldirql);
+		}
+		//InsertHeadList 头部插入
+		//RemoveEntryList(); 移除特定节
+		//RemoveHeadList 头部移除
+	}
+
+}
+
 //安全的卸载
 void DrvierUnload(PDRIVER_OBJECT pDriverObject) {
 	NTSTATUS NtStatus;
+
 	DbgPrint("Unload\n");
 
 	if (pDriverObject->DeviceObject) {
@@ -42,6 +113,38 @@ void DrvierUnload(PDRIVER_OBJECT pDriverObject) {
 
 		IoDeleteDevice(pDriverObject->DeviceObject);
 
+	}
+
+	PsSetCreateProcessNotifyRoutine(ProcessNotifyFun, TRUE);
+
+	//链表遍历
+
+	PLIST_ENTRY  templist = NULL;
+
+	PMyStruct tempptr = NULL;
+
+	//遍历链表
+
+	for (PLIST_ENTRY templist = listhead.Flink; templist != &listhead; templist = templist->Flink) {
+		PMyStruct tempptr = CONTAINING_RECORD(templist, MyStruct, list);
+		DbgPrint("--%d--%p--%s\n",
+			tempptr->pid, tempptr->pEprocesspbj, tempptr->processname);
+	}
+
+	while (listhead.Flink != &listhead) {
+
+		//返回节点指针
+		templist = RemoveTailList(&listhead);
+
+		tempptr = CONTAINING_RECORD(templist, MyStruct, list);
+
+		DbgPrint("--%d--%p--%s\n",
+			tempptr->pid, tempptr->pEprocesspbj, tempptr->processname);
+
+		ExFreePool(tempptr);
+	}
+	if (IsListEmpty(&listhead)) {
+		DbgPrint("Free List Succeed\n");
 	}
 }
 
@@ -114,7 +217,7 @@ NTSTATUS MyRead(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 
 	//只锁了一个
 	//避免高中断级跑过多代码
-	if (!bLock) { 
+	if (!bLock) {
 		//加锁
 		KeAcquireSpinLock(&spinlock, &oldirql);
 
@@ -210,7 +313,7 @@ NTSTATUS MyControl(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 
 		*(PDWORD)pIRP->AssociatedIrp.SystemBuffer = dwIndata;
 
-		ulIoinfo = 777;
+		ulIoinfo = ulOutlen;
 		break;
 	}
 	case IOCTL_COPY: {
@@ -224,7 +327,6 @@ NTSTATUS MyControl(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 
 		RtlStringCbCopyW(target, 0x1000, L"\\??\\");
 		RtlStringCbCopyW(source, 0x1000, L"\\??\\");
-		//__debugbreak();
 
 		RtlStringCbCatW(target, 0x1000, filepath.target);
 		RtlStringCbCatW(source, 0x1000, filepath.source);
@@ -233,8 +335,57 @@ NTSTATUS MyControl(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 
 		status = KernelSmallCopyFile(target, source);
 
-		ulIoinfo = 666;
+		ulIoinfo = ulOutlen;
 
+		break;
+	}
+	case IOCTL_PROC: {
+		//__debugbreak();
+		DbgPrint("IO GetProcess Start! \n");
+
+		DWORD dwCount = *(PDWORD)pIRP->AssociatedIrp.SystemBuffer;
+
+		PUCHAR pOutBuffer = (PUCHAR)pIRP->AssociatedIrp.SystemBuffer;
+
+		RtlZeroMemory(pOutBuffer, ulOutlen);
+
+		PUCHAR testbuffer = ExAllocatePool(NonPagedPool, ulOutlen);
+
+		RtlZeroMemory(testbuffer, ulOutlen);
+
+		for (PLIST_ENTRY templist = listhead.Flink; templist != &listhead; templist = templist->Flink) {
+			if (dwCount > 0) {
+
+				PMyStruct tempptr = CONTAINING_RECORD(templist, MyStruct, list);
+
+				UCHAR tempStr[256] = { 0 };
+
+				status = RtlStringCbPrintfA(tempStr, 0x256, "--%d--%p--%s\n",
+
+					tempptr->pid, tempptr->pEprocesspbj, tempptr->processname);
+
+				if ((strlen(tempStr) + strlen(testbuffer)) >= ulOutlen) {
+					DbgPrint("[WARNING] Get ProcessName Buffer Tool Small\n");
+					break;
+				}
+				RtlStringCbCatA(testbuffer, ulOutlen, tempStr);
+
+				if (status == STATUS_BUFFER_OVERFLOW) {
+					DbgPrint("[WARNING] Get ProcessName Buffer OVERFLOW\n");
+					break;
+				}
+			}
+			else {
+				break;
+			}
+			dwCount--;
+		}
+		///__debugbreak();
+		RtlCopyMemory(pOutBuffer, testbuffer, ulOutlen - 1);
+		DbgPrint("uOutLen : %d\n", ulOutlen);
+		ExFreePool(testbuffer);
+		//实际长度
+		ulIoinfo = strlen(pOutBuffer) + 1;
 		break;
 	}
 	default:
@@ -512,12 +663,12 @@ NTSTATUS KernelSmallCopyFile(PWCHAR pwDestPath, PWCHAR pwSourcePath) {
 
 //Dpc函数
 
-	VOID DpcRoutine(PVOID context) {
+VOID DpcRoutine(PVOID context) {
 
-		DbgPrint("---Dpc Run Current Irql=%d\n", KeGetCurrentIrql());
+	DbgPrint("---Dpc Run Current Irql=%d\n", KeGetCurrentIrql());
 
-		return;
-	}
+	return;
+}
 
 // 使用驱动对象
 NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
@@ -566,10 +717,10 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	PKEY_VALUE_PARTIAL_INFORMATION keyinfo = NULL;
 
 	InitializeObjectAttributes(&objaReg,pRegistryPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-	
+
 	//Open Key
-	//ZwCreateKey ZwOpenKey 
-	
+	//ZwCreateKey ZwOpenKey
+
 	//ZwCreateKey可以创建也可以打开
 	//status = ZwCreateKey(&hKey, KEY_ALL_ACCESS, &objaReg, NULL, NULL, REG_OPTION_NON_VOLATILE, &ulDispostion);
 
@@ -588,7 +739,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	//else {
 	//	DbgPrint("Create Key Failed: %x\n", status);
 	//}
-	
+
 
 	//确定该注册表存在的时候使用
 
@@ -606,7 +757,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 		status = ZwQueryValueKey(hKey, &name, KeyValuePartialInformation, NULL, 0, &ulRetSize);
 
 		if (status == STATUS_BUFFER_TOO_SMALL && ulRetSize != 0) {
-			
+
 			keyinfo = ExAllocatePool(NonPagedPool, ulRetSize);
 
 			if (!keyinfo) {
@@ -643,7 +794,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 			break;
 		}
-		
+
 		status = KernelSmallCopyFile(L"\\??\\C:\\Windows\\System32\\drivers\\NewDriver.sys", imagepath);
 
 		if (!NT_SUCCESS(status)) {
@@ -690,9 +841,9 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	//	DbgPrint("Not Found\n");
 
 	//	RtlCreateRegistryKey(RTL_REGISTRY_SERVICES, L"123456");
-	//	
+	//
 	//}
-	
+
 	*/
 
 	//字符作相关
@@ -780,13 +931,13 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	//创建设备对象 
 
 	status = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
-	
+
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("Create Device Failed :%x\n", status);
 
 		return status;
 	}
-	
+
 	//设置驱动读写方式
 
 	pDevice->Flags |= DO_BUFFERED_IO; // 0xc8 | 0x200 = 0x2c8
@@ -832,6 +983,39 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	//KernelDeleteFile(L"\\??\\C:\\123.exe");
 
 	//KernelSmallCopyFile(L"\\??\\C:\\789.exe", L"\\??\\C:\\567.exe");
+
+	//带标识符的分配内存
+
+	PVOID tempbuffer = ExAllocatePoolWithTag(NonPagedPool, 0x1000, 'xxaa');
+
+	if (tempbuffer) {
+		//内存清零
+		RtlZeroMemory(tempbuffer, 0x1000);
+		//内存填充
+		RtlFillMemory(tempbuffer, 0x1000, 0xcc);
+		//释放
+		ExFreePoolWithTag(tempbuffer, 'xxaa');
+
+		//内存是否相等
+		//RtlCompareMemory()
+
+		//内存是否相等
+		//RtlEqualMemory();
+	}
+
+	//链表初始化，填充为自己的地址
+	InitializeListHead(&listhead);
+
+	DbgPrint("--%p--%p--%p--\n", &listhead, listhead.Flink, listhead.Blink);
+
+	status = PsSetCreateProcessNotifyRoutine(ProcessNotifyFun, FALSE);
+
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("PsSetCreateProcessNotifyRoutine Failed : %x\n", status);
+	}
+	else {
+		DbgPrint("PsSetCreateProcessNotifyRoutine Successed\n");
+	}
 
 	return status;
 }

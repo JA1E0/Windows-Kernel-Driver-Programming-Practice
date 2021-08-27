@@ -7,6 +7,7 @@
 
 #define IOCTL_MUL (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9888,METHOD_BUFFERED,FILE_ANY_ACCESS)
 #define IOCTL_COPY (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9889,METHOD_BUFFERED,FILE_ANY_ACCESS)
+#define IOCTL_PROC (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9890,METHOD_BUFFERED,FILE_ANY_ACCESS)
 
 typedef struct {
 	WCHAR target[256];
@@ -51,15 +52,27 @@ int main()
 	////dwA　dwB =>SysTemBuffer,dwWrite->infomation
 	//printf("--in %d --out %d --really info %d\n", dwA, dwB, dwWrite);
 
-	/*
+	//
+	//system("pause");
+
+	//FILEPATH filepath = {L"C:\\123.exe", L"C:\\DbgView.exe" };
+
+	//DeviceIoControl(hDevice, IOCTL_COPY, (LPVOID)&filepath, sizeof(FILEPATH), NULL,NULL, &dwWrite, NULL);
+
+	//printf("--Copy %ws --To %ws --really info %d\n", filepath.source, filepath.target, dwWrite);
+	//
+
+	//读取创建的进程
+	DWORD dwCount = 10;
+
+	UCHAR buffer[67] = { 0 };
+
+	DeviceIoControl(hDevice, IOCTL_PROC, &dwCount, sizeof(DWORD), buffer, sizeof(buffer), &dwWrite, NULL);
+
+	printf("--Get %d ListEntries/ListEntry \n--out \n%s \n--really info %d\n", dwCount, buffer, dwWrite);
+
 	system("pause");
 
-	FILEPATH filepath = {L"C:\\123.exe", L"C:\\DbgView.exe" };
-
-	DeviceIoControl(hDevice, IOCTL_COPY, (LPVOID)&filepath, sizeof(FILEPATH), NULL,NULL, &dwWrite, NULL);
-
-	printf("--Copy %ws --To %ws --really info %d\n", filepath.source, filepath.target, dwWrite);
-	*/
 	CloseHandle(hDevice);
 
 	system("pause");
