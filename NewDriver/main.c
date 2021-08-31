@@ -22,6 +22,13 @@ KSPIN_LOCK spinlock = { 0 };
 
 KDPC dpcobj = { 0 };
 
+KEVENT gkevent = { 0 };
+
+BYTE	mmcode[10] = { 0 };
+
+PKEVENT pKernelEvent1 = NULL;
+PKEVENT pKernelEvent2 = NULL;
+
 typedef struct {
 	WCHAR target[256];
 	WCHAR source[256];
@@ -38,12 +45,155 @@ typedef struct _MyStruct {
 	BYTE processname[64];
 }MyStruct, * PMyStruct;
 
+typedef struct {
+	HANDLE hEvent1;
+	HANDLE hEvent2;
+} MyEvent,*PMyEvent;
+
 LIST_ENTRY listhead = { 0 };
 
 NTSTATUS KernelSmallCopyFile(PWCHAR pwDestPath, PWCHAR pwSourcePath);
 
-void nothing(HANDLE hPpid, HANDLE hMypid, BOOLEAN bCreate) {
-	DbgPrint("ProcessNotify\n");
+//安全的卸载
+
+VOID KernelThread3(PVOID context) {
+
+	LARGE_INTEGER timeout,sleeptime = { 0 };
+	
+	timeout.QuadPart = -10 * 1000 * 1000 * 5;
+	sleeptime.QuadPart = -10 * 1000 * 1000 * 1;
+
+	//\\REGISTRY\\MACHINE\\SYSTEM\\ControlSet001\\Services\\AddNumber\\Number
+
+	NTSTATUS status = STATUS_SUCCESS;
+	HANDLE hkey = NULL;
+	ULONG ulLen = 0;
+	DWORD dwValue = 0;
+	UNICODE_STRING uReg = RTL_CONSTANT_STRING(L"\\REGISTRY\\MACHINE\\SYSTEM\\ControlSet001\\Services\\AddNumber\\");
+	UNICODE_STRING uValue = RTL_CONSTANT_STRING(L"Number");
+	PKEY_VALUE_PARTIAL_INFORMATION keyinfo = ExAllocatePool(NonPagedPool, 0x1000);
+
+
+	OBJECT_ATTRIBUTES objaReg = { 0 };
+	InitializeObjectAttributes(&objaReg, &uReg, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+	RtlZeroMemory(keyinfo, 0x1000);
+
+	while (1)
+	{
+		//KeWaitForSingleObject(pKernelEvent, Executive, KernelMode, FALSE, &NULL);
+
+		//设置超时时间
+
+		status = KeWaitForSingleObject(pKernelEvent1, Executive, KernelMode, FALSE, &timeout);
+						   
+		if (status == STATUS_TIMEOUT) {
+			DbgPrint("Time Out\n");
+			break;
+		}
+
+		DbgPrint("This Requset com from R3 Routine\n");
+
+		//取r3数据,然后读写，再把数据写回
+		//打开注册表
+		status = ZwOpenKey(&hkey, KEY_ALL_ACCESS, &objaReg);
+		if (!NT_SUCCESS(status)) {
+			DbgPrint("Open Key Failed : %x", status);
+			break;
+		}
+		//读注册表，值+2，写入注册表
+		
+		status = ZwQueryValueKey(hkey, &uValue, KeyValuePartialInformation,keyinfo, 0x1000, &ulLen);
+		if (!NT_SUCCESS(status)) {
+			DbgPrint("Query Key Failed : %x", status);
+			break;
+		}
+
+		dwValue = *(PDWORD)(keyinfo->Data);
+		DbgPrint("Read Value : %d\n", dwValue);
+
+		dwValue += 1;
+
+		status = ZwSetValueKey(hkey, &uValue, 0, REG_DWORD, &dwValue, sizeof(DWORD));
+
+		if (!NT_SUCCESS(status)) {
+			DbgPrint("Set Key Failed : %x", status);
+			break;
+		}
+
+		ZwClose(hkey);
+		RtlZeroMemory(keyinfo, 0x1000);
+
+		KeSetEvent(pKernelEvent2, IO_NO_INCREMENT, FALSE);
+
+		//KeDelayExecutionThread(KernelMode, FALSE, &sleeptime);
+	}
+	ExFreePool(keyinfo);
+	ObDereferenceObject(pKernelEvent1);
+	ObDereferenceObject(pKernelEvent2);
+	PsTerminateSystemThread(0);
+}
+
+VOID KernelThread2(PVOID context) {
+	LARGE_INTEGER sleeptime = { 0 };
+
+	//参数转换成事件地址
+	PKEVENT pevent = (PKEVENT)context;
+	//负值表示相对时间
+	//表示休眠3秒一次
+	sleeptime.QuadPart = -10 * 1000 * 1000* 3;
+
+	PVOID apiddr = NULL;
+
+	UNICODE_STRING apiname = { 0 };
+
+	RtlInitUnicodeString(&apiname, L"NtCreateFile");
+
+	apiddr = MmGetSystemRoutineAddress(&apiname);
+
+	while (1) {
+		//休眠
+		KeDelayExecutionThread(KernelMode, FALSE, &sleeptime);
+		
+		RtlZeroMemory(mmcode, 10);
+
+		RtlCopyMemory(mmcode, apiddr, 10);
+
+		DbgPrint("Set Event\n");
+		//第三个参数表示是否立即调KeWaitXXX函数
+		KeSetEvent(&gkevent, IO_NO_INCREMENT, FALSE);
+	}
+
+	PsTerminateSystemThread(0);
+}
+
+VOID KernelThread1(PVOID context) {
+	//KeInitializeEvent(&gkevent, NotificationEvent, FALSE);
+	KeInitializeEvent(&gkevent, SynchronizationEvent, FALSE);
+
+	HANDLE hthread = NULL;
+
+	NTSTATUS status = PsCreateSystemThread(&hthread, 0, NULL, NULL, NULL, KernelThread2, &gkevent);
+
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("Create Thread Failed : %x", status);
+		return;
+	}
+
+	ZwClose(hthread);
+
+	while(1) {
+		KeWaitForSingleObject(&gkevent, Executive, KernelMode, FALSE, NULL);
+
+		//KeResetEvent(&gkevent);
+
+		//DbgPrint("Event Has be seted\n");
+
+		for (int i = 0; i < 10; i++) {
+			DbgPrint("Mmcode <%x>\n", mmcode[i]);
+		}
+	}
+	PsTerminateSystemThread(0);
+
 }
 
 VOID ProcessNotifyFun(HANDLE pid, HANDLE processid, BOOLEAN bcaref) {
@@ -98,7 +248,25 @@ VOID ProcessNotifyFun(HANDLE pid, HANDLE processid, BOOLEAN bcaref) {
 
 }
 
-//安全的卸载
+
+//分发函数原型
+// NTSTATUS cwkDisptach（PDEVICE_OBJECT pDevice, PIRP pIRP）
+//
+//使用设备对象，IRP函数
+NTSTATUS MyCreate(PDEVICE_OBJECT pDevice, PIRP pIRP) {
+	NTSTATUS status = STATUS_SUCCESS;
+
+	DbgPrint("My Device has be opened\n");
+
+	pIRP->IoStatus.Status = status;
+
+	pIRP->IoStatus.Information = 0;
+
+	IoCompleteRequest(pIRP, IO_NO_INCREMENT);
+
+	return STATUS_SUCCESS;
+}
+
 void DrvierUnload(PDRIVER_OBJECT pDriverObject) {
 	NTSTATUS NtStatus;
 
@@ -115,6 +283,7 @@ void DrvierUnload(PDRIVER_OBJECT pDriverObject) {
 
 	}
 
+	/*
 	PsSetCreateProcessNotifyRoutine(ProcessNotifyFun, TRUE);
 
 	//链表遍历
@@ -146,28 +315,7 @@ void DrvierUnload(PDRIVER_OBJECT pDriverObject) {
 	if (IsListEmpty(&listhead)) {
 		DbgPrint("Free List Succeed\n");
 	}
-}
-
-// 
-//Dispatch
-//
-
-//分发函数原型
-// NTSTATUS cwkDisptach（PDEVICE_OBJECT pDevice, PIRP pIRP）
-// 
-//使用设备对象，IRP函数
-NTSTATUS MyCreate(PDEVICE_OBJECT pDevice, PIRP pIRP) {
-	NTSTATUS status = STATUS_SUCCESS;
-
-	DbgPrint("My Device has be opened\n");
-
-	pIRP->IoStatus.Status = status;
-
-	pIRP->IoStatus.Information = 0;
-
-	IoCompleteRequest(pIRP, IO_NO_INCREMENT);
-
-	return STATUS_SUCCESS;
+	*/
 }
 
 NTSTATUS MyClose(PDEVICE_OBJECT pDevice, PIRP pIRP) {
@@ -297,17 +445,37 @@ NTSTATUS MyControl(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 	//获得输出缓冲区长度
 	ULONG ulOutlen = pStack->Parameters.DeviceIoControl.OutputBufferLength;
 
-
 	ULONG ulIoinfo = 0;
 
-	DbgPrint("--Device IO %d--%d--\n", uIocode, IOCTL_COPY);
+	//DbgPrint("--Device IO %d--%d--\n", uIocode, IOCTL_COPY);
 
 	switch (uIocode)
 	{
 	case IOCTL_MUL: {
+		//__debugbreak();
 		//获取缓冲区
 		DWORD dwIndata = *(PDWORD)pIRP->AssociatedIrp.SystemBuffer;
 		DbgPrint("--Kernel Indata %d--\n", dwIndata);
+
+		//获取句柄
+		PMyEvent myevent = (PMyEvent)pIRP->AssociatedIrp.SystemBuffer;
+		//句柄只隶属于当前进程,获取当前的事件对象
+		//https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-obreferenceobjectbyhandle
+
+		status = ObReferenceObjectByHandle(myevent->hEvent1, EVENT_MODIFY_STATE, *ExEventObjectType, KernelMode, &pKernelEvent1, NULL);
+		NTSTATUS status2 = ObReferenceObjectByHandle(myevent->hEvent2, EVENT_MODIFY_STATE, *ExEventObjectType, KernelMode, &pKernelEvent2, NULL);
+		
+		if (NT_SUCCESS(status) && NT_SUCCESS(status2)) {
+			//提前引用计数减一
+			//方便其他操作该内核对象
+
+			HANDLE hThread = NULL;
+
+			status = PsCreateSystemThread(&hThread, 0, NULL, NULL, NULL, KernelThread3, NULL);
+			if (!NT_SUCCESS(status)) {
+				DbgPrint("Created Thread3 Failed : %x\n",status);
+			}
+		}
 
 		dwIndata = dwIndata * 5;
 
@@ -682,6 +850,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	UNICODE_STRING uTargetUnicode = { 0 };
 
 	PDEVICE_OBJECT pDevice = NULL;
+
+	HANDLE hThread = NULL;
 	//标准流程 初始化
 	RtlInitUnicodeString(&DeviceName, DEVICE_NAME);
 
@@ -689,9 +859,13 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	KeInitializeSpinLock(&spinlock);
 
+	//status = PsCreateSystemThread(&hThread, 0, NULL, NULL, NULL, KernelThread1, &gkevent);
+
+	/*
 	KeInitializeDpc(&dpcobj, DpcRoutine, NULL);
 
 	KeInsertQueueDpc(&dpcobj, NULL, NULL);
+	*/
 
 	//DbgPrint("---Current Irql = %d---\n", KeGetCurrentIrql());
 
@@ -986,6 +1160,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	//带标识符的分配内存
 
+	/*
 	PVOID tempbuffer = ExAllocatePoolWithTag(NonPagedPool, 0x1000, 'xxaa');
 
 	if (tempbuffer) {
@@ -1016,6 +1191,6 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	else {
 		DbgPrint("PsSetCreateProcessNotifyRoutine Successed\n");
 	}
-
+	*/
 	return status;
 }
