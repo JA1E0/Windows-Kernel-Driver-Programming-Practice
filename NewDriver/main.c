@@ -10,9 +10,11 @@
 #define IOCTL_COPY (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9889,METHOD_BUFFERED,FILE_ANY_ACCESS)
 #define IOCTL_PROC (ULONG)CTL_CODE(FILE_DEVICE_UNKNOWN,0x9890,METHOD_BUFFERED,FILE_ANY_ACCESS)
 
-
+KTIMER kerneltimer;
 //声明后才可使用
 NTKERNELAPI UCHAR* PsGetProcessImageFileName(__in PEPROCESS Process);
+
+BOOL work = FALSE;
 
 BYTE	PhyBuffer[] = { 0x11,0x22,0x33,0x44,0x55 };
 
@@ -269,9 +271,9 @@ NTSTATUS MyCreate(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 
 void DrvierUnload(PDRIVER_OBJECT pDriverObject) {
 	NTSTATUS NtStatus;
-
+	work = TRUE;
 	DbgPrint("Unload\n");
-
+	//IoStopTimer(pDriverObject->DeviceObject);
 	if (pDriverObject->DeviceObject) {
 		UNICODE_STRING sysname = { 0 };
 		RtlInitUnicodeString(&sysname, SYM_NAME);
@@ -281,7 +283,8 @@ void DrvierUnload(PDRIVER_OBJECT pDriverObject) {
 
 		IoDeleteDevice(pDriverObject->DeviceObject);
 
-	}
+	}	 
+
 
 	/*
 	PsSetCreateProcessNotifyRoutine(ProcessNotifyFun, TRUE);
@@ -838,6 +841,56 @@ VOID DpcRoutine(PVOID context) {
 	return;
 }
 
+VOID TimeWorker(PVOID context) {
+	DbgPrint("Irql = %d\n", KeGetCurrentIrql());
+
+	DbgPrint("Processname = %s\n", PsGetProcessImageFileName(PsGetCurrentProcess()));
+
+	return;
+}
+WORK_QUEUE_ITEM workobj = { 0 };
+
+VOID WorkItemRoutine(PVOID Context) {
+	DbgPrint("Irql = %d\n", KeGetCurrentIrql());
+
+	DbgPrint("Processname = %s\n", PsGetProcessImageFileName(PsGetCurrentProcess()));
+	
+	LARGE_INTEGER sleeptime = { 0 };
+	
+	sleeptime.QuadPart = -10 * 1000 * 1000 * 1;
+
+	while (1)
+	{
+		if (work) {
+			break;
+		}
+		DbgPrint("Worked Item!\n");
+		KeDelayExecutionThread(KernelMode, FALSE, &sleeptime);
+
+	}
+
+	return;
+}
+
+VOID WorkItemRoutine2(PVOID Context) {
+
+	DbgPrint("Irql = %d\n", KeGetCurrentIrql());
+	
+	DbgPrint("Processname = %s\n", PsGetProcessImageFileName(PsGetCurrentProcess()));
+	__debugbreak();
+
+	LARGE_INTEGER sleeptime = { 0 };
+
+	sleeptime.QuadPart = -10 * 1000 * 1000 * 1;
+
+	KeDelayExecutionThread(KernelMode, FALSE, &sleeptime);
+
+	DbgPrint("WorkItemRoutine2 Worked!\n");
+
+	KeSetEvent((PKEVENT)Context,0,FALSE);
+
+	return;
+}
 // 使用驱动对象
 NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
 {
@@ -1104,7 +1157,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 
 	//创建设备对象 
 
-	status = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
+	status = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, 
+		FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
 
 	if (!NT_SUCCESS(status)) {
 		DbgPrint("Create Device Failed :%x\n", status);
@@ -1153,6 +1207,59 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath
 	pDriverObject->MajorFunction[IRP_MJ_WRITE] = MyWrite;
 
 	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
+
+	////初始化IO定时器
+	//IoInitializeTimer(pDevice, TimeWorker, NULL);
+	//IoInitializeTimer(pDevice, TimeWorker, NULL);
+
+	////启动IO定时器
+	//IoStartTimer(pDevice);
+
+	//DPC定时器
+	/*
+
+	KeInitializeTimer(&kerneltimer);
+
+	//初始化DPC
+	KeInitializeDpc(&dpcobj, DpcRoutine, NULL);
+
+	//插入dpc队列后 两秒后执行
+	LARGE_INTEGER dpctime = { 0 };
+	LARGE_INTEGER timeout = { 0 };
+
+	dpctime.QuadPart = -10 * 1000 * 1000 * 4;
+	timeout.QuadPart = -10 * 1000 * 1000 * 2;
+
+	//设置timer
+	//KeSetTimer(&kerneltimer, dpctime, &dpcobj);
+	KeSetTimer(&kerneltimer, dpctime, NULL);
+
+	status = KeWaitForSingleObject(&kerneltimer,Executive,KernelMode,FALSE,&timeout);
+
+
+	if (status == STATUS_TIMEOUT) {
+		DbgPrint("Time out\n");
+	}
+
+	DbgPrint("Dpc Timer has worked\n");
+		*/
+
+	//初始化工作例程
+	//ExInitializeWorkItem(&workobj, WorkItemRoutine, NULL);
+
+	KEVENT workevent = { 0 };
+	//__debugbreak();
+	KeInitializeEvent(&workevent, NotificationEvent, FALSE);
+
+	ExInitializeWorkItem(&workobj, WorkItemRoutine2, &workevent);
+
+	//插入工作例程
+	//ExQueueWorkItem(&workobj, CriticalWorkQueue);
+	ExQueueWorkItem(&workobj, DelayedWorkQueue);
+
+	KeWaitForSingleObject(&workevent, Executive, KernelMode, FALSE, NULL);
+
+	DbgPrint("WorkItem has be worked!\n");
 
 	//KernelDeleteFile(L"\\??\\C:\\123.exe");
 
