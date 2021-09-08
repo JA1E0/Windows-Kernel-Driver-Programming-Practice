@@ -50,7 +50,7 @@ typedef struct _MyStruct {
 typedef struct {
 	HANDLE hEvent1;
 	HANDLE hEvent2;
-} MyEvent,*PMyEvent;
+} MyEvent, * PMyEvent;
 
 LIST_ENTRY listhead = { 0 };
 
@@ -60,8 +60,8 @@ NTSTATUS KernelSmallCopyFile(PWCHAR pwDestPath, PWCHAR pwSourcePath);
 
 VOID KernelThread3(PVOID context) {
 
-	LARGE_INTEGER timeout,sleeptime = { 0 };
-	
+	LARGE_INTEGER timeout, sleeptime = { 0 };
+
 	timeout.QuadPart = -10 * 1000 * 1000 * 5;
 	sleeptime.QuadPart = -10 * 1000 * 1000 * 1;
 
@@ -87,7 +87,7 @@ VOID KernelThread3(PVOID context) {
 		//设置超时时间
 
 		status = KeWaitForSingleObject(pKernelEvent1, Executive, KernelMode, FALSE, &timeout);
-						   
+
 		if (status == STATUS_TIMEOUT) {
 			DbgPrint("Time Out\n");
 			break;
@@ -103,8 +103,8 @@ VOID KernelThread3(PVOID context) {
 			break;
 		}
 		//读注册表，值+2，写入注册表
-		
-		status = ZwQueryValueKey(hkey, &uValue, KeyValuePartialInformation,keyinfo, 0x1000, &ulLen);
+
+		status = ZwQueryValueKey(hkey, &uValue, KeyValuePartialInformation, keyinfo, 0x1000, &ulLen);
 		if (!NT_SUCCESS(status)) {
 			DbgPrint("Query Key Failed : %x", status);
 			break;
@@ -142,7 +142,7 @@ VOID KernelThread2(PVOID context) {
 	PKEVENT pevent = (PKEVENT)context;
 	//负值表示相对时间
 	//表示休眠3秒一次
-	sleeptime.QuadPart = -10 * 1000 * 1000* 3;
+	sleeptime.QuadPart = -10 * 1000 * 1000 * 3;
 
 	PVOID apiddr = NULL;
 
@@ -155,7 +155,7 @@ VOID KernelThread2(PVOID context) {
 	while (1) {
 		//休眠
 		KeDelayExecutionThread(KernelMode, FALSE, &sleeptime);
-		
+
 		RtlZeroMemory(mmcode, 10);
 
 		RtlCopyMemory(mmcode, apiddr, 10);
@@ -183,7 +183,7 @@ VOID KernelThread1(PVOID context) {
 
 	ZwClose(hthread);
 
-	while(1) {
+	while (1) {
 		KeWaitForSingleObject(&gkevent, Executive, KernelMode, FALSE, NULL);
 
 		//KeResetEvent(&gkevent);
@@ -283,7 +283,7 @@ void DrvierUnload(PDRIVER_OBJECT pDriverObject) {
 
 		IoDeleteDevice(pDriverObject->DeviceObject);
 
-	}	 
+	}
 
 
 	/*
@@ -467,7 +467,7 @@ NTSTATUS MyControl(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 
 		status = ObReferenceObjectByHandle(myevent->hEvent1, EVENT_MODIFY_STATE, *ExEventObjectType, KernelMode, &pKernelEvent1, NULL);
 		NTSTATUS status2 = ObReferenceObjectByHandle(myevent->hEvent2, EVENT_MODIFY_STATE, *ExEventObjectType, KernelMode, &pKernelEvent2, NULL);
-		
+
 		if (NT_SUCCESS(status) && NT_SUCCESS(status2)) {
 			//提前引用计数减一
 			//方便其他操作该内核对象
@@ -476,7 +476,7 @@ NTSTATUS MyControl(PDEVICE_OBJECT pDevice, PIRP pIRP) {
 
 			status = PsCreateSystemThread(&hThread, 0, NULL, NULL, NULL, KernelThread3, NULL);
 			if (!NT_SUCCESS(status)) {
-				DbgPrint("Created Thread3 Failed : %x\n",status);
+				DbgPrint("Created Thread3 Failed : %x\n", status);
 			}
 		}
 
@@ -854,9 +854,9 @@ VOID WorkItemRoutine(PVOID Context) {
 	DbgPrint("Irql = %d\n", KeGetCurrentIrql());
 
 	DbgPrint("Processname = %s\n", PsGetProcessImageFileName(PsGetCurrentProcess()));
-	
+
 	LARGE_INTEGER sleeptime = { 0 };
-	
+
 	sleeptime.QuadPart = -10 * 1000 * 1000 * 1;
 
 	while (1)
@@ -875,7 +875,7 @@ VOID WorkItemRoutine(PVOID Context) {
 VOID WorkItemRoutine2(PVOID Context) {
 
 	DbgPrint("Irql = %d\n", KeGetCurrentIrql());
-	
+
 	DbgPrint("Processname = %s\n", PsGetProcessImageFileName(PsGetCurrentProcess()));
 	__debugbreak();
 
@@ -887,417 +887,500 @@ VOID WorkItemRoutine2(PVOID Context) {
 
 	DbgPrint("WorkItemRoutine2 Worked!\n");
 
-	KeSetEvent((PKEVENT)Context,0,FALSE);
+	KeSetEvent((PKEVENT)Context, 0, FALSE);
 
 	return;
 }
 // 使用驱动对象
-NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
-{
-	pDriverObject->DriverUnload = DrvierUnload;
+
+//NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath)
+//{
+//	pDriverObject->DriverUnload = DrvierUnload;
+//
+//	NTSTATUS status = STATUS_SUCCESS;
+//
+//	UNICODE_STRING DeviceName = { 0 };
+//
+//	UNICODE_STRING uTargetUnicode = { 0 };
+//
+//	PDEVICE_OBJECT pDevice = NULL;
+//
+//	HANDLE hThread = NULL;
+//	//标准流程 初始化
+//	RtlInitUnicodeString(&DeviceName, DEVICE_NAME);
+//
+//	DbgPrint("---%wZ---\n", pRegistryPath);
+//
+//	KeInitializeSpinLock(&spinlock);
+//
+//	//status = PsCreateSystemThread(&hThread, 0, NULL, NULL, NULL, KernelThread1, &gkevent);
+//
+//	/*
+//	KeInitializeDpc(&dpcobj, DpcRoutine, NULL);
+//
+//	KeInsertQueueDpc(&dpcobj, NULL, NULL);
+//	*/
+//
+//	//DbgPrint("---Current Irql = %d---\n", KeGetCurrentIrql());
+//
+//	//KIRQL oldirql = 0;
+//
+//	//oldirql = KeRaiseIrqlToDpcLevel();
+//
+//	//DbgPrint("---Current Irql = %d---\n", KeGetCurrentIrql());
+//
+//	//KeLowerIrql(oldirql);
+//
+//	// 注册表操作
+//
+//	/*
+//	//open reg
+//
+//	HANDLE hKey = NULL;
+//
+//	ULONG ulRetSize = 0;
+//
+//	OBJECT_ATTRIBUTES objaReg = { 0 };
+//
+//	PKEY_VALUE_PARTIAL_INFORMATION keyinfo = NULL;
+//
+//	InitializeObjectAttributes(&objaReg,pRegistryPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+//
+//	//Open Key
+//	//ZwCreateKey ZwOpenKey
+//
+//	//ZwCreateKey可以创建也可以打开
+//	//status = ZwCreateKey(&hKey, KEY_ALL_ACCESS, &objaReg, NULL, NULL, REG_OPTION_NON_VOLATILE, &ulDispostion);
+//
+//	//if (NT_SUCCESS(status)) {
+//	//	if (ulDispostion == REG_CREATED_NEW_KEY) {
+//	//		DbgPrint("Key has be Created\n");
+//	//	}
+//	//	else if (ulDispostion == REG_OPENED_EXISTING_KEY)
+//	//	{
+//	//		DbgPrint("Key has be Opened\n");
+//	//	}
+//	//	else {
+//	//		DbgPrint("Error\n");
+//	//	}
+//	//}
+//	//else {
+//	//	DbgPrint("Create Key Failed: %x\n", status);
+//	//}
+//
+//
+//	//确定该注册表存在的时候使用
+//
+//	status = ZwOpenKey(&hKey, KEY_ALL_ACCESS, &objaReg);
+//
+//
+//	do {
+//		UNICODE_STRING name = { 0 };
+//
+//		RtlInitUnicodeString(&name, L"ImagePath");
+//
+//		if (!NT_SUCCESS(status))
+//			break;
+//
+//		status = ZwQueryValueKey(hKey, &name, KeyValuePartialInformation, NULL, 0, &ulRetSize);
+//
+//		if (status == STATUS_BUFFER_TOO_SMALL && ulRetSize != 0) {
+//
+//			keyinfo = ExAllocatePool(NonPagedPool, ulRetSize);
+//
+//			if (!keyinfo) {
+//
+//				DbgPrint("ExAllocatePool Secondly Failed\n");
+//
+//				break;
+//			}
+//			RtlZeroMemory(keyinfo, ulRetSize);
+//		}
+//		status = ZwQueryValueKey(hKey, &name, KeyValuePartialInformation, keyinfo, ulRetSize, &ulRetSize);
+//
+//		if (!NT_SUCCESS(status))
+//			break;
+//
+//		PWCHAR imagepath = (PWCHAR)(keyinfo->Data);
+//
+//		DbgPrint("---ImagePath---%ws\n", imagepath);
+//
+//		//C:\\Windows\System32\drivers \SystemRoot\System32\drivers\acpipmi.sys 更早的启动
+//
+//		//课后作业 判断前缀是否是\\SystemRoot\\ 则已经拷贝
+//
+//		UNICODE_STRING prefix = { 0 };
+//		UNICODE_STRING uImagePath = { 0 };
+//
+//		RtlInitUnicodeString(&prefix, L"\\SystemRoot\\");
+//		RtlInitUnicodeString(&uImagePath, imagepath);
+//
+//
+//		if (RtlPrefixUnicodeString(&prefix, &uImagePath, TRUE)) {
+//
+//			DbgPrint("Already Copied File\n");
+//
+//			break;
+//		}
+//
+//		status = KernelSmallCopyFile(L"\\??\\C:\\Windows\\System32\\drivers\\NewDriver.sys", imagepath);
+//
+//		if (!NT_SUCCESS(status)) {
+//			DbgPrint("Copy File Failed :%x\n", status);
+//			break;
+//		}
+//
+//		//change path
+//		PWCHAR  rootpath = L"\\SystemRoot\\system32\\drivers\\NewDriver.sys";
+//											//使用环境变量的UNICODE字符串
+//		status = ZwSetValueKey(hKey, &name, 0, REG_EXPAND_SZ,rootpath, wcslen(rootpath) * 2 + 2);
+//
+//		if (!NT_SUCCESS(status)) {
+//			DbgPrint("SetValueKey Failed :%x\n", status);
+//			break;
+//		}
+//
+//	}while (0);
+//
+//	if (keyinfo != NULL)
+//		ExFreePool(keyinfo);
+//	if (hKey != NULL) {
+//		ZwClose(hKey);
+//		hKey = NULL;
+//	}
+//
+//
+//	//另一种方式 写入注册表
+//	ULONG tempstart = 1;
+//
+//	//封装好的函数
+//	//RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE, pRegistryPath->Buffer, L"Start", REG_DWORD, &tempstart, 4);
+//
+//	//先删除子项 才能删除父项
+//	//ZwDeleteKey(hKey);
+//
+//	//检测注册表是否存在
+//	//status = RtlCheckRegistryKey(RTL_REGISTRY_SERVICES, L"123456");
+//
+//	//if (NT_SUCCESS(status)) {
+//	//	DbgPrint("Be Found\n");
+//	//}
+//	//else {
+//	//	DbgPrint("Not Found\n");
+//
+//	//	RtlCreateRegistryKey(RTL_REGISTRY_SERVICES, L"123456");
+//	//
+//	//}
+//
+//	*/
+//
+//	//字符作相关
+//	/*
+//	PCHAR	tempbuffer = "C:\\ABc\\ccc\\bbb\\eee.txt";
+//
+//	STRING	str = { 0 };
+//
+//	RtlInitString(&str, tempbuffer);
+//
+//	//转换成宽字符
+//
+//	RtlAnsiStringToUnicodeString(&DeviceName, &str, TRUE);
+//
+//
+//	DbgPrint("--%wZ--\n", &DeviceName);
+//
+//	uTargetUnicode.Buffer = ExAllocatePool(NonPagedPool, 0x1000);
+//	uTargetUnicode.MaximumLength = 0x1000;
+//
+//	RtlZeroMemory(uTargetUnicode.Buffer,0x1000);
+//
+//	RtlCopyUnicodeString(&uTargetUnicode, &DeviceName);
+//
+//	DbgPrint("--%wZ--\n", &uTargetUnicode);
+//
+//	//大小写
+//
+//	RtlUpcaseUnicodeString(&DeviceName, &DeviceName, FALSE);
+//	DbgPrint("--%wZ--\n", &DeviceName);
+//
+//	//释放之前申请的缓冲区
+//	RtlFreeUnicodeString(&DeviceName);
+//	RtlFreeUnicodeString(&uTargetUnicode);
+//
+//	//
+//	//新
+//	//安全拷贝字符
+//
+//	PWCHAR tempbuffer2 = ExAllocatePool(NonPagedPool, 0x1000);
+//
+//	RtlZeroMemory(tempbuffer2, 0x1000);
+//
+//	RtlStringCbCopyW(tempbuffer2, 0x1000, L"\\??\\");
+//
+//	//追加字符
+//
+//	RtlStringCbCatW(tempbuffer2, 0x1000, L"C:\\ABc\\ccc\\bbb\\eee.txt");
+//
+//	//前缀判断
+//	UNICODE_STRING temp1 = { 0 }, temp2 = { 0 };
+//
+//	RtlInitUnicodeString(&temp1, tempbuffer2);
+//
+//	RtlInitUnicodeString(&temp2, L"\\??\\");
+//
+//	if (RtlPrefixUnicodeString(&temp2, &temp1, FALSE)) {
+//		DbgPrint("Be Finded\n");
+//	}
+//	UNICODE_STRING temp3 = { 0 }, temp4 = { 0 };
+//
+//
+//	RtlInitUnicodeString(&temp3, L"C:\\ABc\\ccc\\bbb\\eee.txt");
+//
+//	RtlInitUnicodeString(&temp4, L"C:\\ABc\\CCC\\bbb\\AVVeee123.txt");
+//
+//
+//	if  (RtlEqualString(&temp3, &temp4, TRUE)) {
+//		DbgPrint("temp3 = temp4 \n");
+//	}
+//
+//	//字符查找
+//	UNICODE_STRING temp5 = { 0 };
+//	//一定要大写
+//	RtlInitUnicodeString(&temp5, L"*EEE*");//*EEE.TXT
+//
+//	if (FsRtlIsNameInExpression(&temp5, &temp4, TRUE, NULL)) {
+//		DbgPrint("Searched\n");
+//	}
+//
+//	DbgPrint("--%ws--\n", tempbuffer2);
+//
+//	*/
+//
+//	//创建设备对象 
+//
+//	status = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, 
+//		FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
+//
+//	if (!NT_SUCCESS(status)) {
+//		DbgPrint("Create Device Failed :%x\n", status);
+//
+//		return status;
+//	}
+//
+//	//设置驱动读写方式
+//
+//	pDevice->Flags |= DO_BUFFERED_IO; // 0xc8 | 0x200 = 0x2c8
+//
+//	// 创建设备成功 创建符号链接
+//
+//	UNICODE_STRING symname = { 0 };
+//
+//	RtlInitUnicodeString(&symname, SYM_NAME);
+//
+//	//IoDeleteSymbolicLink(&symname);
+//	status = IoCreateSymbolicLink(&symname, &DeviceName);
+//
+//	if (status == STATUS_OBJECT_NAME_COLLISION) {
+//		UNICODE_STRING symname = { 0 };
+//		RtlInitUnicodeString(&symname, SYM_NAME);
+//		IoDeleteSymbolicLink(&symname);
+//		status = IoCreateSymbolicLink(&symname, &DeviceName);
+//	}
+//
+//	if (!NT_SUCCESS(status)) {
+//
+//		DbgPrint("Create SymbolicLink Failed:%x\n", status);
+//		IoDeleteDevice(pDevice);
+//		return status;
+//	}
+//
+//	//派遣函数
+//
+//	pDriverObject->MajorFunction[IRP_MJ_CREATE] = MyCreate;
+//
+//	//关闭 清理操作
+//	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = MyClose;
+//
+//	pDriverObject->MajorFunction[IRP_MJ_CLEANUP] = MyClean;
+//
+//	pDriverObject->MajorFunction[IRP_MJ_READ] = MyRead;
+//
+//	pDriverObject->MajorFunction[IRP_MJ_WRITE] = MyWrite;
+//
+//	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
+//
+//	////初始化IO定时器
+//	//IoInitializeTimer(pDevice, TimeWorker, NULL);
+//	//IoInitializeTimer(pDevice, TimeWorker, NULL);
+//
+//	////启动IO定时器
+//	//IoStartTimer(pDevice);
+//
+//	//DPC定时器
+//	/*
+//
+//	KeInitializeTimer(&kerneltimer);
+//
+//	//初始化DPC
+//	KeInitializeDpc(&dpcobj, DpcRoutine, NULL);
+//
+//	//插入dpc队列后 两秒后执行
+//	LARGE_INTEGER dpctime = { 0 };
+//	LARGE_INTEGER timeout = { 0 };
+//
+//	dpctime.QuadPart = -10 * 1000 * 1000 * 4;
+//	timeout.QuadPart = -10 * 1000 * 1000 * 2;
+//
+//	//设置timer
+//	//KeSetTimer(&kerneltimer, dpctime, &dpcobj);
+//	KeSetTimer(&kerneltimer, dpctime, NULL);
+//
+//	status = KeWaitForSingleObject(&kerneltimer,Executive,KernelMode,FALSE,&timeout);
+//
+//
+//	if (status == STATUS_TIMEOUT) {
+//		DbgPrint("Time out\n");
+//	}
+//
+//	DbgPrint("Dpc Timer has worked\n");
+//		*/
+//
+//	//初始化工作例程
+//	//ExInitializeWorkItem(&workobj, WorkItemRoutine, NULL);
+//
+//	KEVENT workevent = { 0 };
+//	//__debugbreak();
+//	KeInitializeEvent(&workevent, NotificationEvent, FALSE);
+//
+//	ExInitializeWorkItem(&workobj, WorkItemRoutine2, &workevent);
+//
+//	//插入工作例程
+//	//ExQueueWorkItem(&workobj, CriticalWorkQueue);
+//	ExQueueWorkItem(&workobj, DelayedWorkQueue);
+//
+//	KeWaitForSingleObject(&workevent, Executive, KernelMode, FALSE, NULL);
+//
+//	DbgPrint("WorkItem has be worked!\n");
+//
+//	//KernelDeleteFile(L"\\??\\C:\\123.exe");
+//
+//	//KernelSmallCopyFile(L"\\??\\C:\\789.exe", L"\\??\\C:\\567.exe");
+//
+//	//带标识符的分配内存
+//
+//	/*
+//	PVOID tempbuffer = ExAllocatePoolWithTag(NonPagedPool, 0x1000, 'xxaa');
+//
+//	if (tempbuffer) {
+//		//内存清零
+//		RtlZeroMemory(tempbuffer, 0x1000);
+//		//内存填充
+//		RtlFillMemory(tempbuffer, 0x1000, 0xcc);
+//		//释放
+//		ExFreePoolWithTag(tempbuffer, 'xxaa');
+//
+//		//内存是否相等
+//		//RtlCompareMemory()
+//
+//		//内存是否相等
+//		//RtlEqualMemory();
+//	}
+//
+//	//链表初始化，填充为自己的地址
+//	InitializeListHead(&listhead);
+//
+//	DbgPrint("--%p--%p--%p--\n", &listhead, listhead.Flink, listhead.Blink);
+//
+//	status = PsSetCreateProcessNotifyRoutine(ProcessNotifyFun, FALSE);
+//
+//	if (!NT_SUCCESS(status)) {
+//		DbgPrint("PsSetCreateProcessNotifyRoutine Failed : %x\n", status);
+//	}
+//	else {
+//		DbgPrint("PsSetCreateProcessNotifyRoutine Successed\n");
+//	}
+//	*/
+//	return status;
+//}
+
+VOID FindProcessNotify() {
+	UNICODE_STRING apiname = { 0 };
+
+	PUCHAR	apiaddr = NULL;
+
+	LONG offset = 0;
+
+	PULONG64 PspCreateProcessNotifyRoutine = NULL;
+	RtlInitUnicodeString(&apiname, L"PsSetCreateThreadNotifyRoutine");
+
+	apiaddr = MmGetSystemRoutineAddress(&apiname);
+
+	if (!apiaddr) {
+		DbgPrint("Not Found\n");
+
+		return;
+	}
+	//__debugbreak();
+	DbgPrint("PsSetCreateThreadNotifyRoutine Addr :0x%llp\n", (PVOID)apiaddr);
+
+	apiaddr = apiaddr + 6;
+
+	offset = *(PULONG)(apiaddr + 1);
+	// E8 65 00 00 00                                      call    PspSetCreateThreadNotifyRoutine
+	apiaddr = apiaddr + offset + 5;
+
+	//4C 8D 2D 9F 93 D4 FF   lea     r13, PspCreateProcessNotifyRoutine
+	for (int i = 0; i < 1000; i++) {
+		if (*(apiaddr + i) == 0x4c && *(apiaddr + i + 1) == 0x8D && *(apiaddr + i + 2) == 0x2D) {
+			apiaddr = apiaddr + i;
+
+			offset = *(PLONG)(apiaddr + 3);
+
+			PspCreateProcessNotifyRoutine = apiaddr + offset + 7;
+
+			break;
+		}
+	}
+
+	DbgPrint("Routine Nums Addr ：%p\n", PspCreateProcessNotifyRoutine);
+	//__debugbreak();
+
+	PULONG64 reallyNotify = NULL;
+
+	ULONG64 RoutineNotify = NULL;
 
 	NTSTATUS status = STATUS_SUCCESS;
 
-	UNICODE_STRING DeviceName = { 0 };
+	for (int i = 0; i < 64; i++) {
 
-	UNICODE_STRING uTargetUnicode = { 0 };
+		reallyNotify = (ULONG64)(PspCreateProcessNotifyRoutine) + i*8;
 
-	PDEVICE_OBJECT pDevice = NULL;
-
-	HANDLE hThread = NULL;
-	//标准流程 初始化
-	RtlInitUnicodeString(&DeviceName, DEVICE_NAME);
-
-	DbgPrint("---%wZ---\n", pRegistryPath);
-
-	KeInitializeSpinLock(&spinlock);
-
-	//status = PsCreateSystemThread(&hThread, 0, NULL, NULL, NULL, KernelThread1, &gkevent);
-
-	/*
-	KeInitializeDpc(&dpcobj, DpcRoutine, NULL);
-
-	KeInsertQueueDpc(&dpcobj, NULL, NULL);
-	*/
-
-	//DbgPrint("---Current Irql = %d---\n", KeGetCurrentIrql());
-
-	//KIRQL oldirql = 0;
-
-	//oldirql = KeRaiseIrqlToDpcLevel();
-
-	//DbgPrint("---Current Irql = %d---\n", KeGetCurrentIrql());
-
-	//KeLowerIrql(oldirql);
-
-	// 注册表操作
-
-	/*
-	//open reg
-
-	HANDLE hKey = NULL;
-
-	ULONG ulRetSize = 0;
-
-	OBJECT_ATTRIBUTES objaReg = { 0 };
-
-	PKEY_VALUE_PARTIAL_INFORMATION keyinfo = NULL;
-
-	InitializeObjectAttributes(&objaReg,pRegistryPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-
-	//Open Key
-	//ZwCreateKey ZwOpenKey
-
-	//ZwCreateKey可以创建也可以打开
-	//status = ZwCreateKey(&hKey, KEY_ALL_ACCESS, &objaReg, NULL, NULL, REG_OPTION_NON_VOLATILE, &ulDispostion);
-
-	//if (NT_SUCCESS(status)) {
-	//	if (ulDispostion == REG_CREATED_NEW_KEY) {
-	//		DbgPrint("Key has be Created\n");
-	//	}
-	//	else if (ulDispostion == REG_OPENED_EXISTING_KEY)
-	//	{
-	//		DbgPrint("Key has be Opened\n");
-	//	}
-	//	else {
-	//		DbgPrint("Error\n");
-	//	}
-	//}
-	//else {
-	//	DbgPrint("Create Key Failed: %x\n", status);
-	//}
-
-
-	//确定该注册表存在的时候使用
-
-	status = ZwOpenKey(&hKey, KEY_ALL_ACCESS, &objaReg);
-
-
-	do {
-		UNICODE_STRING name = { 0 };
-
-		RtlInitUnicodeString(&name, L"ImagePath");
-
-		if (!NT_SUCCESS(status))
+		if (*reallyNotify == 0)
 			break;
+		RoutineNotify = *(PULONG64)(*reallyNotify & 0xFFFFFFFFFFFFFFF8);
 
-		status = ZwQueryValueKey(hKey, &name, KeyValuePartialInformation, NULL, 0, &ulRetSize);
+		DbgPrint("CreateProcess Routine Notify:0x%p\n", RoutineNotify);
+		
+		//摘除
+		if (MmIsAddressValid(*reallyNotify)) {
+			DbgPrint("1\n");
+			status = PsSetCreateProcessNotifyRoutine((PVOID)RoutineNotify,TRUE);
 
-		if (status == STATUS_BUFFER_TOO_SMALL && ulRetSize != 0) {
-
-			keyinfo = ExAllocatePool(NonPagedPool, ulRetSize);
-
-			if (!keyinfo) {
-
-				DbgPrint("ExAllocatePool Secondly Failed\n");
-
-				break;
+			if (NT_SUCCESS(status))
+			{
+				DbgPrint("Remove CreateProcess Notify :0x%p\n", RoutineNotify);
 			}
-			RtlZeroMemory(keyinfo, ulRetSize);
 		}
-		status = ZwQueryValueKey(hKey, &name, KeyValuePartialInformation, keyinfo, ulRetSize, &ulRetSize);
-
-		if (!NT_SUCCESS(status))
-			break;
-
-		PWCHAR imagepath = (PWCHAR)(keyinfo->Data);
-
-		DbgPrint("---ImagePath---%ws\n", imagepath);
-
-		//C:\\Windows\System32\drivers \SystemRoot\System32\drivers\acpipmi.sys 更早的启动
-
-		//课后作业 判断前缀是否是\\SystemRoot\\ 则已经拷贝
-
-		UNICODE_STRING prefix = { 0 };
-		UNICODE_STRING uImagePath = { 0 };
-
-		RtlInitUnicodeString(&prefix, L"\\SystemRoot\\");
-		RtlInitUnicodeString(&uImagePath, imagepath);
-
-
-		if (RtlPrefixUnicodeString(&prefix, &uImagePath, TRUE)) {
-
-			DbgPrint("Already Copied File\n");
-
-			break;
-		}
-
-		status = KernelSmallCopyFile(L"\\??\\C:\\Windows\\System32\\drivers\\NewDriver.sys", imagepath);
-
-		if (!NT_SUCCESS(status)) {
-			DbgPrint("Copy File Failed :%x\n", status);
-			break;
-		}
-
-		//change path
-		PWCHAR  rootpath = L"\\SystemRoot\\system32\\drivers\\NewDriver.sys";
-											//使用环境变量的UNICODE字符串
-		status = ZwSetValueKey(hKey, &name, 0, REG_EXPAND_SZ,rootpath, wcslen(rootpath) * 2 + 2);
-
-		if (!NT_SUCCESS(status)) {
-			DbgPrint("SetValueKey Failed :%x\n", status);
-			break;
-		}
-
-	}while (0);
-
-	if (keyinfo != NULL)
-		ExFreePool(keyinfo);
-	if (hKey != NULL) {
-		ZwClose(hKey);
-		hKey = NULL;
 	}
+	return;
+}
 
+NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pReg) {
+	NTSTATUS status = STATUS_SUCCESS;
 
-	//另一种方式 写入注册表
-	ULONG tempstart = 1;
+	pDriverObject->DriverUnload = DrvierUnload;
 
-	//封装好的函数
-	//RtlWriteRegistryValue(RTL_REGISTRY_ABSOLUTE, pRegistryPath->Buffer, L"Start", REG_DWORD, &tempstart, 4);
+	FindProcessNotify();
 
-	//先删除子项 才能删除父项
-	//ZwDeleteKey(hKey);
-
-	//检测注册表是否存在
-	//status = RtlCheckRegistryKey(RTL_REGISTRY_SERVICES, L"123456");
-
-	//if (NT_SUCCESS(status)) {
-	//	DbgPrint("Be Found\n");
-	//}
-	//else {
-	//	DbgPrint("Not Found\n");
-
-	//	RtlCreateRegistryKey(RTL_REGISTRY_SERVICES, L"123456");
-	//
-	//}
-
-	*/
-
-	//字符作相关
-	/*
-	PCHAR	tempbuffer = "C:\\ABc\\ccc\\bbb\\eee.txt";
-
-	STRING	str = { 0 };
-
-	RtlInitString(&str, tempbuffer);
-
-	//转换成宽字符
-
-	RtlAnsiStringToUnicodeString(&DeviceName, &str, TRUE);
-
-
-	DbgPrint("--%wZ--\n", &DeviceName);
-
-	uTargetUnicode.Buffer = ExAllocatePool(NonPagedPool, 0x1000);
-	uTargetUnicode.MaximumLength = 0x1000;
-
-	RtlZeroMemory(uTargetUnicode.Buffer,0x1000);
-
-	RtlCopyUnicodeString(&uTargetUnicode, &DeviceName);
-
-	DbgPrint("--%wZ--\n", &uTargetUnicode);
-
-	//大小写
-
-	RtlUpcaseUnicodeString(&DeviceName, &DeviceName, FALSE);
-	DbgPrint("--%wZ--\n", &DeviceName);
-
-	//释放之前申请的缓冲区
-	RtlFreeUnicodeString(&DeviceName);
-	RtlFreeUnicodeString(&uTargetUnicode);
-
-	//
-	//新
-	//安全拷贝字符
-
-	PWCHAR tempbuffer2 = ExAllocatePool(NonPagedPool, 0x1000);
-
-	RtlZeroMemory(tempbuffer2, 0x1000);
-
-	RtlStringCbCopyW(tempbuffer2, 0x1000, L"\\??\\");
-
-	//追加字符
-
-	RtlStringCbCatW(tempbuffer2, 0x1000, L"C:\\ABc\\ccc\\bbb\\eee.txt");
-
-	//前缀判断
-	UNICODE_STRING temp1 = { 0 }, temp2 = { 0 };
-
-	RtlInitUnicodeString(&temp1, tempbuffer2);
-
-	RtlInitUnicodeString(&temp2, L"\\??\\");
-
-	if (RtlPrefixUnicodeString(&temp2, &temp1, FALSE)) {
-		DbgPrint("Be Finded\n");
-	}
-	UNICODE_STRING temp3 = { 0 }, temp4 = { 0 };
-
-
-	RtlInitUnicodeString(&temp3, L"C:\\ABc\\ccc\\bbb\\eee.txt");
-
-	RtlInitUnicodeString(&temp4, L"C:\\ABc\\CCC\\bbb\\AVVeee123.txt");
-
-
-	if  (RtlEqualString(&temp3, &temp4, TRUE)) {
-		DbgPrint("temp3 = temp4 \n");
-	}
-
-	//字符查找
-	UNICODE_STRING temp5 = { 0 };
-	//一定要大写
-	RtlInitUnicodeString(&temp5, L"*EEE*");//*EEE.TXT
-
-	if (FsRtlIsNameInExpression(&temp5, &temp4, TRUE, NULL)) {
-		DbgPrint("Searched\n");
-	}
-
-	DbgPrint("--%ws--\n", tempbuffer2);
-
-	*/
-
-	//创建设备对象 
-
-	status = IoCreateDevice(pDriverObject, 200/*DeviceExtensionSize 设备扩展大小*/, &DeviceName, 
-		FILE_DEVICE_UNKNOWN, 0, TRUE, &pDevice);
-
-	if (!NT_SUCCESS(status)) {
-		DbgPrint("Create Device Failed :%x\n", status);
-
-		return status;
-	}
-
-	//设置驱动读写方式
-
-	pDevice->Flags |= DO_BUFFERED_IO; // 0xc8 | 0x200 = 0x2c8
-
-	// 创建设备成功 创建符号链接
-
-	UNICODE_STRING symname = { 0 };
-
-	RtlInitUnicodeString(&symname, SYM_NAME);
-
-	//IoDeleteSymbolicLink(&symname);
-	status = IoCreateSymbolicLink(&symname, &DeviceName);
-
-	if (status == STATUS_OBJECT_NAME_COLLISION) {
-		UNICODE_STRING symname = { 0 };
-		RtlInitUnicodeString(&symname, SYM_NAME);
-		IoDeleteSymbolicLink(&symname);
-		status = IoCreateSymbolicLink(&symname, &DeviceName);
-	}
-
-	if (!NT_SUCCESS(status)) {
-
-		DbgPrint("Create SymbolicLink Failed:%x\n", status);
-		IoDeleteDevice(pDevice);
-		return status;
-	}
-
-	//派遣函数
-
-	pDriverObject->MajorFunction[IRP_MJ_CREATE] = MyCreate;
-
-	//关闭 清理操作
-	pDriverObject->MajorFunction[IRP_MJ_CLOSE] = MyClose;
-
-	pDriverObject->MajorFunction[IRP_MJ_CLEANUP] = MyClean;
-
-	pDriverObject->MajorFunction[IRP_MJ_READ] = MyRead;
-
-	pDriverObject->MajorFunction[IRP_MJ_WRITE] = MyWrite;
-
-	pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = MyControl;
-
-	////初始化IO定时器
-	//IoInitializeTimer(pDevice, TimeWorker, NULL);
-	//IoInitializeTimer(pDevice, TimeWorker, NULL);
-
-	////启动IO定时器
-	//IoStartTimer(pDevice);
-
-	//DPC定时器
-	/*
-
-	KeInitializeTimer(&kerneltimer);
-
-	//初始化DPC
-	KeInitializeDpc(&dpcobj, DpcRoutine, NULL);
-
-	//插入dpc队列后 两秒后执行
-	LARGE_INTEGER dpctime = { 0 };
-	LARGE_INTEGER timeout = { 0 };
-
-	dpctime.QuadPart = -10 * 1000 * 1000 * 4;
-	timeout.QuadPart = -10 * 1000 * 1000 * 2;
-
-	//设置timer
-	//KeSetTimer(&kerneltimer, dpctime, &dpcobj);
-	KeSetTimer(&kerneltimer, dpctime, NULL);
-
-	status = KeWaitForSingleObject(&kerneltimer,Executive,KernelMode,FALSE,&timeout);
-
-
-	if (status == STATUS_TIMEOUT) {
-		DbgPrint("Time out\n");
-	}
-
-	DbgPrint("Dpc Timer has worked\n");
-		*/
-
-	//初始化工作例程
-	//ExInitializeWorkItem(&workobj, WorkItemRoutine, NULL);
-
-	KEVENT workevent = { 0 };
-	//__debugbreak();
-	KeInitializeEvent(&workevent, NotificationEvent, FALSE);
-
-	ExInitializeWorkItem(&workobj, WorkItemRoutine2, &workevent);
-
-	//插入工作例程
-	//ExQueueWorkItem(&workobj, CriticalWorkQueue);
-	ExQueueWorkItem(&workobj, DelayedWorkQueue);
-
-	KeWaitForSingleObject(&workevent, Executive, KernelMode, FALSE, NULL);
-
-	DbgPrint("WorkItem has be worked!\n");
-
-	//KernelDeleteFile(L"\\??\\C:\\123.exe");
-
-	//KernelSmallCopyFile(L"\\??\\C:\\789.exe", L"\\??\\C:\\567.exe");
-
-	//带标识符的分配内存
-
-	/*
-	PVOID tempbuffer = ExAllocatePoolWithTag(NonPagedPool, 0x1000, 'xxaa');
-
-	if (tempbuffer) {
-		//内存清零
-		RtlZeroMemory(tempbuffer, 0x1000);
-		//内存填充
-		RtlFillMemory(tempbuffer, 0x1000, 0xcc);
-		//释放
-		ExFreePoolWithTag(tempbuffer, 'xxaa');
-
-		//内存是否相等
-		//RtlCompareMemory()
-
-		//内存是否相等
-		//RtlEqualMemory();
-	}
-
-	//链表初始化，填充为自己的地址
-	InitializeListHead(&listhead);
-
-	DbgPrint("--%p--%p--%p--\n", &listhead, listhead.Flink, listhead.Blink);
-
-	status = PsSetCreateProcessNotifyRoutine(ProcessNotifyFun, FALSE);
-
-	if (!NT_SUCCESS(status)) {
-		DbgPrint("PsSetCreateProcessNotifyRoutine Failed : %x\n", status);
-	}
-	else {
-		DbgPrint("PsSetCreateProcessNotifyRoutine Successed\n");
-	}
-	*/
 	return status;
 }
