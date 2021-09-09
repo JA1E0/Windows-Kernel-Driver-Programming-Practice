@@ -19,7 +19,7 @@ VOID MyCreateProcessRoutine(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create) {
 
 			PCHAR imagename = PsGetProcessImageFileName(tempep);
 
-			DbgPrint("[CreateProcess] ProcessName:<%wZ>, ProcessId:<0x%x>\n", imagename,ProcessId);
+			DbgPrint("[CreateProcess] ProcessName:<%wZ>, ProcessId:<0x%x>\n", imagename, ProcessId);
 		}
 	}
 	return;
@@ -121,6 +121,14 @@ VOID MyCreateThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Crea
 
 }
 
+NTSTATUS RregistryCallback(PVOID CallbackContext, PVOID Argument1, PVOID Argument2) {
+	NTSTATUS status = STATUS_SUCCESS;
+
+	DbgPrint("[%p]\n", CallbackContext);
+
+	return status;
+}
+
 VOID DriverUnload(PDRIVER_OBJECT pDriverObject) {
 
 	PsSetCreateProcessNotifyRoutine(MyCreateProcessRoutine, TRUE);
@@ -131,6 +139,8 @@ VOID DriverUnload(PDRIVER_OBJECT pDriverObject) {
 	PsRemoveLoadImageNotifyRoutine(MyLoadImageNotifyRoutine);
 
 	PsRemoveCreateThreadNotifyRoutine(MyCreateThreadNotifyRoutine);
+
+	DbgPrint("UnLoad\n");
 
 	return;
 }
@@ -164,9 +174,9 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegPath) {
 			DbgPrint("PsSetCreateThreadNotifyRoutine Failed: %p\n", status);
 			break;
 		}
+
+
 	} while (0);
-
-
 
 	return status;
 }
