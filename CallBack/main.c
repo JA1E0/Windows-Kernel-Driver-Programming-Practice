@@ -82,15 +82,14 @@ NTSTATUS RregistryCallback(PVOID CallbackContext, PVOID Argument1, PVOID Argumen
 	return status;
 }
 
-OB_PREOP_CALLBACK_STATUS   PreOperation_Process(PVOID RegistrationContext,
-	POB_PRE_OPERATION_INFORMATION OperationInformation) {
+OB_PREOP_CALLBACK_STATUS   PreOperation_Process(PVOID RegistrationContext,POB_PRE_OPERATION_INFORMATION OperationInformation) {
 	//操作的是进程对象
 
 	OB_PREOP_CALLBACK_STATUS status = OB_PREOP_SUCCESS;
 
 	PUCHAR imagefilename = PsGetProcessImageFileName(OperationInformation->Object);
 
-	DbgPrint("Process Name : [%s]\n", imagefilename);
+	//DbgPrint("Process Name : [%s]\n", imagefilename);
 
 	//保护带有calc的进程。
 	if (strstr(imagefilename, "calc")) {
@@ -171,6 +170,7 @@ NTSTATUS RegProcessCallBack(PDRIVER_OBJECT pDriverObject) {
 
 	status = ObRegisterCallbacks(&ob, &ProcessCallBackHandle);
 
+	DbgPrint("PreOperation_Process %p\n", PreOperation_Process);
 	return status;
 }
 
@@ -220,7 +220,7 @@ VOID DriverUnload(PDRIVER_OBJECT pDriverObject) {
 
 	//ObUnRegisterCallbacks(ProcessCallBackHandle);
 
-	ObUnRegisterCallbacks(ThreadCallBackHandle);
+	//ObUnRegisterCallbacks(ThreadCallBackHandle);
 
 	DbgPrint("UnLoad\n");
 	return;
@@ -241,15 +241,15 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegPath) {
 			break;
 		g_bSuccRegister = TRUE;
 
-
+		//__debugbreak();
 		//进程回调
 		//status = RegProcessCallBack(pDriverObject);
 		//if (!NT_SUCCESS(status))
 		//	break;
 		//线程回调
-		status = RegThreadCallBack(pDriverObject);
-		if (!NT_SUCCESS(status))
-			break;
+		//status = RegThreadCallBack(pDriverObject);
+		//if (!NT_SUCCESS(status))
+		//	break;
 
 	} while (FALSE);
 

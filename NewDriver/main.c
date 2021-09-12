@@ -1310,7 +1310,7 @@ VOID FindProcessNotify() {
 
 	LONG offset = 0;
 
-	PULONG64 PspCreateProcessNotifyRoutine = NULL;
+	PLONG64 PspCreateProcessNotifyRoutine = NULL;
 	RtlInitUnicodeString(&apiname, L"PsSetCreateThreadNotifyRoutine");
 
 	apiaddr = MmGetSystemRoutineAddress(&apiname);
