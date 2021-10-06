@@ -1,5 +1,6 @@
+/*
 #include<ntifs.h>
-#include<windef.h>
+
 
 //Windows7 sp1
 
@@ -57,8 +58,6 @@ PVOID pApiAddr = NULL;
 
 BOOLEAN g_HookFlag = FALSE;
 
-NTSTATUS MyNtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
-
 KIRQL	UpIRQL();
 
 VOID	DownIRQL(KIRQL OldIrql);
@@ -68,6 +67,8 @@ NTSTATUS	HookNtOpen();
 VOID	RestoreCode();
 
 NTSTATUS GetSSDTFunc();
+
+NTSTATUS MyNtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
 
 VOID	DriverUnload(PDRIVER_OBJECT pDriverObject) {
 	DbgPrint("UnLoad\n");
@@ -95,7 +96,7 @@ NTSTATUS	DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegPath) {
 	//}
 
 	//获取SSDT
-	status = GetSSDTFunc();
+	//status = GetSSDTFunc();
 
 
 	return status;
@@ -205,7 +206,6 @@ VOID	RestoreCode() {
 	return;
 }
 
-
 NTSTATUS GetSSDTFunc() {
 	NTSTATUS	status = STATUS_SUCCESS;
 	PUCHAR	pSystemCall = 0;
@@ -241,3 +241,56 @@ NTSTATUS GetSSDTFunc() {
 
 	return status;
 }
+*/
+
+#include"ntdll.h"
+#include"GetSSDT.h"
+#include"undocumnted.h"
+
+VOID DriverUnload(IN PDRIVER_OBJECT pDriverObject) {
+	//释放加载的DLL
+	NTDLL::Deinitialize();
+	return;
+}
+
+extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT pDrvierObject, PUNICODE_STRING pRegPath) {
+	NTSTATUS status = STATUS_SUCCESS;
+	BOOL	Flag = FALSE;
+
+	pDrvierObject->DriverUnload = DriverUnload;
+
+	status = NTDLL::Initialize();
+	if (!NT_SUCCESS(status)) {
+		DbgPrint("[-]	NTDLL::Init Failed	Error:%d\n", status);
+		return status;
+	}
+	Flag = Undocumented::UndocumentedInit();
+	if (!Flag) {
+		DbgPrint("[-]	Undocumented::UndocumentedInit Failed	Error:%d\n", status);
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	CHAR name[] = "NtOpenThread";
+	int Num = NTDLL::GetSSDTIndex(name);
+	if (Num == -1) {
+		DbgPrint("[-]	NTDLL::GetSSDTIndex Failed	Error\n");
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	DbgPrint("[+]	%d	\n", Num);
+	ULONG_PTR pFunc = SSDT::GetSSDTFunctionAddress(name);
+	if (pFunc == NULL) {
+		DbgPrint("[-]	SDT::GetFunctionAddress(name)	Error\n");
+		return STATUS_UNSUCCESSFUL;
+	}
+	DbgPrint("[+]	%s	Address:%p\n", name, pFunc);
+
+	PShadowSSDTStruct pShadowSSDT= SSDT::ShadowSSDTFind();
+	if (pShadowSSDT == NULL) {
+		DbgPrint("[-]	ShadowSSDTFind	Error\n");
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	return status;
+}
+
