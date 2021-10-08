@@ -1,6 +1,12 @@
 # Windows-Kernel-Driver-Programming-Practice
 铁锤视频驱动基础编程
 
+##  环境
+VS2019  
+WDK1903
+Win10_1903
+Win7
+
 ##  视频地址
 https://www.bilibili.com/video/BV1QJ411A7kR
 
